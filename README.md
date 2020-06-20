@@ -27,9 +27,9 @@
 ### File & folder structure
 * `global.R`: load all data sources to the global environment
 * `data/`: all data sources go in here
-
+---
 * `ui.R`: builds the user interface
 * `styles.css`: styling of the HTML elements in the UI
 * `gomap.js`: javascript loaded on the map in the UI
-
+---
 * `server.R`: loads the servers and handles user input
