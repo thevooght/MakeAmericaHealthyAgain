@@ -262,7 +262,7 @@ train_week <- train_agg %>% tq_transmute(select = Freq,
                                          mutate_fun = apply.weekly,
                                          FUN = sum)
 train_week$Date <- as.Date(train_week$Date)
-#train_week <- train_week[-c(1:3),] #start from full first week (EDIT: why are these no full weeks?)
+train_week <- train_week[-1,] #start from full first week
 
 # How many weeks are we training?
 length(train_week$Freq[train_week$Date %in% indTRAIN])#->150
