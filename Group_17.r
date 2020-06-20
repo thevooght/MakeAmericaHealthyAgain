@@ -1,6 +1,8 @@
-####### MAKE AMERICA HEALTHY AGAIN
-####### Group 17
-####### Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle
+##########################################################################################################
+####################################### MAKE AMERICA HEALTHY AGAIN #######################################
+################################################ Group 17 ################################################
+############ Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle #############
+##########################################################################################################
 
 
 # In case you want to know what a certain variable in dataset of futureaccidents represents
@@ -8,22 +10,15 @@
 # https://towardsdatascience.com/usa-accidents-data-analysis-d130843cde02
 
 rm(list = ls())
-dev.off(dev.list()['RStudioGD'])
+#dev.off(dev.list()['RStudioGD'])
 #dir <- '/Users/natha/Documents/Unief'
 dir <- paste0(getwd(), "/data")
 setwd(dir = dir)
 getwd()
 
-######################################## REQUIRED PACKAGES ########################################
 
-if(!require('forecast')) { install.packages('forecast', quietly = TRUE) }; require('forecast', quietly = TRUE)
-if(!require('imputeMissings')) { install.packages('imputeMissings', quietly = TRUE) }; require('imputeMissings', quietly = TRUE)
-if(!require('reshape2')) { install.packages('reshape2', quietly = TRUE) }; require('reshape2', quietly = TRUE)
-if(!require('dplyr')) { install.packages('dplyr', quietly = TRUE) }; require('dplyr', quietly = TRUE)
-if(!require('tidyquant')) { install.packages('tidyquant', quietly = TRUE) }; require('tidyquant', quietly = TRUE)
-
-
-######################################## LOAD DATA ########################################
+############################################### LOAD DATA ################################################
+##########################################################################################################
 
 # Accidents
 futac <- read.csv(file = 'futureAccidentDATA.csv', 
@@ -44,7 +39,14 @@ holidays <- read.csv(file = 'Public-Holiday.csv',
                      sep = ';')
 str(holidays)
 
-######################################## CLEAN DATA ########################################
+########################################## CLEAN & PREPARE DATA ##########################################
+##########################################################################################################
+
+# Required packages
+if(!require('imputeMissings')) { install.packages('imputeMissings', quietly = TRUE) }; require('imputeMissings', quietly = TRUE)
+if(!require('reshape2')) { install.packages('reshape2', quietly = TRUE) }; require('reshape2', quietly = TRUE)
+if(!require('dplyr')) { install.packages('dplyr', quietly = TRUE) }; require('dplyr', quietly = TRUE)
+if(!require('tidyquant')) { install.packages('tidyquant', quietly = TRUE) }; require('tidyquant', quietly = TRUE)
 
 ##### Cities
 cities$X2019 = gsub(" ", "", cities$X2019) #remove spaces to make conversion to int possible
@@ -64,9 +66,7 @@ cities <- data.frame(City = str_split_fixed(cities$City, ", ", 2)[,1],
 names(holidays)[1] <- 'Date'
 holidays$Date <- as.Date(as.character(holidays$Date), format = '%d/%m/%Y')
 
-
-######################################## PREPARE FORECASTING DATA ######################################## 
-
+##### Accidents
 summary(futac)
 
 # Exclude useless columns
@@ -80,7 +80,6 @@ cols_to_delete <- c("X", "ID", "Source", "TMC", "Severity", "End_Lat", "End_Lng"
   # don't need address (number, street, side) as we base our calculations on the coordinates
   # exclude binary columns (but ?IDEA?: calculate number of TRUE values for particular area (however probably too little true's))
   # don't need information about whether is was night or day
-
 basetable <- futac[ , !names(futac) %in% cols_to_delete]
 
 # What to do with NAs
@@ -102,24 +101,29 @@ cols_to_impute <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility
 basetable[cols_to_impute] <- imputeMissings::impute(basetable[cols_to_impute])
   # numeric/integer vectors are imputed with the median
 
-# There are also some missing values for wind_direction & weather_condition (when manually inspecting the dataset)
-unique(basetable["Wind_Direction"])
-table(basetable["Wind_Direction"])
-unique(basetable["Weather_Condition"])
-table(basetable["Weather_Condition"])
+# There are also some missing values for wind_direction, weather_condition, & city (when manually inspecting the dataset)
+table(basetable$City[basetable["City"] == ""])[1]
+table(basetable$City[basetable["Wind_Direction"] == ""])[1]
+table(basetable$City[basetable["Weather_Condition"] == ""])[1]
 # Replace the empty strings with NA values
+basetable$City[basetable$City == ""] <- NA
 basetable$Wind_Direction[basetable$Wind_Direction == ""] <- NA
 basetable$Weather_Condition[basetable$Weather_Condition == ""] <- NA
 # Impute the NA values with "unknown"
+basetable$City <- factor(basetable$City, 
+                         levels = levels(addNA(basetable$City)), #addNA: add NA as a level
+                         labels = c(levels(basetable$City), "Unknown"), # force the NA level to be "Unknown"
+                         exclude = NULL)
 basetable$Wind_Direction <- factor(basetable$Wind_Direction, 
-                                   levels = levels(addNA(basetable$Wind_Direction)), #addNA: add NA as a level
-                                   labels = c(levels(basetable$Wind_Direction), "Unknown"), # force the NA level to be "Unknown"
+                                   levels = levels(addNA(basetable$Wind_Direction)),
+                                   labels = c(levels(basetable$Wind_Direction), "Unknown"),
                                    exclude = NULL)
 basetable$Weather_Condition <- factor(basetable$Weather_Condition, 
                                       levels = levels(addNA(basetable$Weather_Condition)), 
                                       labels = c(levels(basetable$Weather_Condition), "Unknown"), 
                                       exclude = NULL)
 # Drop unused levels ("") of the factors
+basetable$City <- droplevels(basetable$City)
 basetable$Wind_Direction <- droplevels(basetable$Wind_Direction)
 basetable$Weather_Condition <- droplevels(basetable$Weather_Condition)
 
@@ -132,18 +136,79 @@ f <- "%Y-%M-%d"
 basetable$date <- as.Date(as.character(basetable$time), dateformat = f)
 basetable$time <- NULL
 
-# if we manually inspect the dataset, we can see that there are 8 observations from before February 2036
-summary(basetable)
-  # there is one observation from year 2035 -> delete this observation
+# If we manually inspect the dataset, we can see that there are 8 observations from before February 2036
+basetable <- basetable[order(basetable$date),]
+# delete these observations
+basetable <- basetable[-c(1:8),] 
 
-
+# Inspect final dataset
 str(basetable)
 
-# Save final basetable
+
+##################################### SPATIAL GRID FOR ALL ACCIDENTS #####################################
+######################### Calculate number of accidents per geographical raster ##########################
+##########################################################################################################
+
+# Required packages
+if(!require('raster')) { install.packages('raster', quietly = TRUE) }; require('raster', quietly = TRUE)
+if(!require('rasterVis')) { install.packages('rasterVis', quietly = TRUE) }; require('rasterVis', quietly = TRUE)
+if(!require('sp')) { install.packages('sp', quietly = TRUE) }; require('sp', quietly = TRUE)
+
+library(raster)
+library(rasterVis)
+library(RColorBrewer)
+library(sp) #for SpatialPoints
+
+# Define dimensions & res size
+lon_min <- -128.0; lon_max <- -65.0; lat_min <- 25.5; lat_max <- 50.5
+res <- 0.1 #degrees
+
+# Create copy of basetable: data
+data <- basetable
+data$area_ha <- 0.000004 #ha=1km^2 and surface of a vehicle is e.g. 4m^2
+coords <- cbind(data$Start_Lng, data$Start_Lat)
+data_pts <- SpatialPointsDataFrame(coords=coords, data=data.frame(data$area_ha))
+names(data_pts) <- "area_ha"
+
+# Create (empty) rasters
+cell_size <- 0.25 #500m x 500m
+ncols <- ((lon_max - lon_min)/cell_size)+1
+nrows <- ((lat_max - lat_min)/cell_size)+1 
+accident_counts <- raster(nrows=nrows, ncols=ncols, xmn=lon_min, xmx=lon_max, ymn=lat_min, ymx=lat_max, res=res, crs="+proj=longlat +datum=WGS84")
+accident_counts[] <- 0
+accident_counts
+
+# rasterize: transfer values associated with spatial data to raster cells
+# in other words, calculate number of accidents per raster cell
+accident_counts <- rasterize(coords, accident_counts, fun = "count")
+accident_counts
+
+# Plot map
+plot(log10(accident_counts), col=brewer.pal(9,"BuPu"), sub="log10 Number of Accidents")
+
+# Create table for time series
+table <- data.frame(table(cellFromXY(accident_counts, data_pts))) 
+  #should have 63 |-65--128| times 25 |50.5-25.5| times 100 (0.1 is 1/100 of 1) squared degrees or 157500
+head(table) #note that several squares do not have values for several reasons: no accidents due to no streets or located in sea
+
+# Adding left out squares with value zero
+grid_count <- data.frame(rasterToPoints(accident_counts, spatial = F))
+grid_count$Var1 <- table$Var1
+
+
+######################################### CREATE FINAL BASETABLE #########################################
+##########################################################################################################
+
+###### Save final basetable
 write.csv(basetable, file = "basetable.csv")
 
 
-######################################## BENCHMARKING ######################################## 
+############################################## BENCHMARKING ############################################## 
+##########################################################################################################
+
+
+# Required packages
+if(!require('forecast')) { install.packages('forecast', quietly = TRUE) }; require('forecast', quietly = TRUE)
 
 # Load basetable
 basetable <- read.csv(file = "basetable.csv")
@@ -152,9 +217,9 @@ basetable <- read.csv(file = "basetable.csv")
 # Aggregate accidents over all geographical rosters per date
 train_agg <- aggregate(basetable$X, by=list(Date=basetable$date), length)
   # ! rosters not yet available (just aggregate per city for now)
-names(train_agg)[2] <- 'count'
+names(train_agg)[2] <- 'Freq'
 train_agg$Date <- as.Date(train_agg$Date)
-identical(sum(train_agg$count), nrow(basetable)) #has to be true -> ok
+identical(sum(train_agg$Freq), nrow(basetable)) #has to be true -> ok
 
 summary(train_agg) #start period on 8th of February
 
@@ -165,69 +230,71 @@ summary(train_agg) #start period on 8th of February
 
 # Let's benchmark both weekly and monthly and then choose 1 to forecast
 
-########################### Make out-of-period sample ######################################
+##### MAKE OUT-OF-PERIOD SAMPLE
 
+# Train set : 2036-2038 / Test set: 2039
 indTRAIN <- as.Date(as.Date("2036-02-08", dateformat = f, origin = "1970-01-01") : as.Date("2038-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
 indTEST <- as.Date(as.Date("2039-01-01", dateformat = f, origin = "1970-01-01") : as.Date("2039-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
 
-#unsure if this next step, giving missing days frequency=0 is absolutely necessary, but done anyways (might happen automatically)
+# Not sure if for this next step, giving missing days frequency=0 is absolutely necessary, but done anyways (might happen automatically)
+  # EDIT: not necessary since we aggregate per week later (I suppose)
 
-#How many days are we training?
+# How many days are we training?
 length(train_agg$Freq[train_agg$Date %in% indTRAIN]) #1054 != length of indTrain 
-                                                     #this means dates with 0 accidents -> put in train_agg
-Missing <- indTRAIN[!indTRAIN %in% train_agg$Date] 
-Missing 
-Missing <- as.data.frame(Missing)
-Missing$Freq <- 0
-names(Missing)[1] <- 'Date'
-train_agg <- rbind(train_agg, Missing)
-train_agg <- train_agg[order(train_agg$Date),]
 
+# This means that there are dates with 0 accidents -> put them in train_agg for completeness?
+#Missing <- indTRAIN[!indTRAIN %in% train_agg$Date] 
+#Missing 
+#Missing <- as.data.frame(Missing)
+#Missing$Freq <- 0
+#names(Missing)[1] <- 'Date'
+#train_agg <- rbind(train_agg, Missing)
+#train_agg <- train_agg[order(train_agg$Date),]
 
-#How many days are we testing ? 
+# How many days are we testing? 
 length(train_agg$Freq[train_agg$Date %in% indTEST]) #365 ->ok
 
-######################create ts###################################
-#WEEKLY
+##### CREATE TIME-SERIES
+# WEEKLY
 library(tidyquant)
 
-train_week <- train_agg %>%
-                            tq_transmute(select     = Freq,
-                            mutate_fun = apply.weekly,
-                            FUN        = sum)
+train_week <- train_agg %>% tq_transmute(select = Freq,
+                                         mutate_fun = apply.weekly,
+                                         FUN = sum)
 train_week$Date <- as.Date(train_week$Date)
-train_week <- train_week[-c(1:3),] #start from full first week
-#How many weeks are we training?
+#train_week <- train_week[-c(1:3),] #start from full first week (EDIT: why are these no full weeks?)
+
+# How many weeks are we training?
 length(train_week$Freq[train_week$Date %in% indTRAIN])#->150
-#How many weeks are we testing ? 
+# How many weeks are we testing? 
 length(train_week$Freq[train_week$Date %in% indTEST]) #->52 
 
 
 train_ts_week <- ts(data = train_week$Freq[train_week$Date %in% indTRAIN],
-                 start = c(2036,7), end = c(2038,52),frequency = 52)
+                 start = c(2036,7), end = c(2038,52), frequency = 52)
 
 test_ts_week <- ts(data = train_week$Freq[train_week$Date %in% indTEST],
-              start = c(2039,1), end = c(2039,52),frequency = 52)
-#MONTHLY
+              start = c(2039,1), end = c(2039,52), frequency = 52)
 
-train_month <- train_agg %>%
-  tq_transmute(select     = Freq,
-               mutate_fun = apply.monthly,
-               FUN        = sum)
+# MONTHLY
+train_month <- train_agg %>% tq_transmute(select = Freq,
+                                          mutate_fun = apply.monthly,
+                                          FUN = sum)
 train_month$Date <- as.Date(train_month$Date)
-train_month <- train_month[-c(1:3),] #start from full first month
-#How many months are we training?
+#train_month <- train_month[-c(1:3),] #start from full first month
+
+# How many months are we training?
 length(train_month$Freq[train_month$Date %in% indTRAIN])#34
-#How many months are we testing ? 
+# How many months are we testing? 
 length(train_month$Freq[train_month$Date %in% indTEST]) #12
 
 train_ts_month <- ts(data = train_month$Freq[train_month$Date %in% indTRAIN],
-                    start = c(2036,3), end = c(2038,12),frequency = 12)
+                    start = c(2036,3), end = c(2038,12), frequency = 12)
 
 test_ts_month <- ts(data = train_month$Freq[train_month$Date %in% indTEST],
-                   start = c(2039,1), end = c(2039,12),frequency = 12)
+                   start = c(2039,1), end = c(2039,12), frequency = 12)
 
-##############################FORECAST BENCHMARK#########################
+##### BENCHMARK FORECASTING METHODS
 
 ##### 1) ets
 
@@ -239,7 +306,7 @@ ets_model <- ets(train_ts_month, model = "ZZN")
 forecast_ets_month <- forecast(ets_model,h=12)
 plot(forecast_ets_month)
 
-#####  2) Arima with external regressors
+##### 2) Arima with external regressors
 
 ###create features table
 features <- new[,-c(1:3)]
@@ -251,7 +318,7 @@ features_week <- features_agg %>%
                mutate_fun = apply.weekly,
                FUN        = mean)
 features_week$Date <- as.Date(features_week$Date)
-#also add a logical for whether there was a holiday that week(won't do for month, seems not useful in that case)
+#also add a logical for whether there was a holiday that week (won't do it for month, seems not useful in that case)
 nextweekday <- function(date, wday) {   #function to get the next sunday
   date <- as.Date(date)
   diff <- wday - wday(date)
