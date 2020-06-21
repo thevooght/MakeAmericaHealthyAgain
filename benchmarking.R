@@ -1,4 +1,4 @@
-f_prepare_timeseries_data <- function(data) {
+f_prepare_timeseries <- function(data) {
   
   ### Read in data
   dat <- read.csv(file = paste0(data, ".csv"),
@@ -10,54 +10,56 @@ f_prepare_timeseries_data <- function(data) {
   dat <- dat[ , names(dat) %in% cols_to_keep] # select columns
   
   ### Aggregate accidents per date
-  train <- aggregate(dat$X, by=list(Date=dat$date), length)
-  names(train)[2] <- 'Freq'
-  train$Date <- as.Date(train$Date)
+  dat_agg <- aggregate(dat$X, by=list(Date=dat$date), length)
+  names(dat_agg)[2] <- 'Freq'
+  dat_agg$Date <- as.Date(dat_agg$Date)
   
   ### Make out-of-period sample => Train set : 2036-2038 / Test set: 2039
   indTRAIN <- as.Date(as.Date("2036-02-08", dateformat = f, origin = "1970-01-01") : as.Date("2038-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
   indTEST <- as.Date(as.Date("2039-01-01", dateformat = f, origin = "1970-01-01") : as.Date("2039-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
   
-  ### Create weekly time-series
+  ### Compute number of accidents per week
   if(!require('dplyr')) { install.packages('dplyr', quietly = TRUE) }; require('dplyr', quietly = TRUE)
   library(dplyr)
   
   if(!require('tidyquant')) { install.packages('tidyquant', quietly = TRUE) }; require('tidyquant', quietly = TRUE)
   library(tidyquant)
   
-  train_weekly <- train %>% tq_transmute(select = Freq,
-                                         mutate_fun = apply.weekly,
-                                         FUN = sum)
-  train_weekly$Date <- as.Date(train_weekly$Date)
-  train_weekly <- train_weekly[-1,] # start from first full week
+  dat_agg_weekly <- dat_agg %>% tq_transmute(select = Freq,
+                                             mutate_fun = apply.weekly,
+                                             FUN = sum)
+  dat_agg_weekly$Date <- as.Date(dat_agg_weekly$Date)
+  dat_agg_weekly <- dat_agg_weekly[-1,] # start from first full week
   
-  train_ts_weekly <- ts(data = train_weekly$Freq[train_weekly$Date %in% indTRAIN],
-                      start = c(2036,7), end = c(2038,52), frequency = 52)
+  ### Create weekly time-series & split in training and test set
+  train_ts_weekly <- ts(data = dat_agg_weekly$Freq[dat_agg_weekly$Date %in% indTRAIN],
+                        start = c(2036,6), end = c(2038,52), frequency = 52)
   # Why start =  c(2036,7)? -> You start 2036 at week 7 (after removing the first uncomplete week)
   # Why end = c(2038,52)? -> You end in 2038 after 52 weeks
   
-  test_ts_weekly <- ts(data = train_weekly$Freq[train_weekly$Date %in% indTEST],
-                     start = c(2039,1), end = c(2039,52), frequency = 52)
+  test_ts_weekly <- ts(data = dat_agg_weekly$Freq[dat_agg_weekly$Date %in% indTEST],
+                       start = c(2039,1), end = c(2039,52), frequency = 52)
   # Start at week 1, end in week 52
   
-  output <- list(train_weekly, train_ts_weekly, test_ts_weekly)
+  output <- list(dat_agg_weekly, train_ts_weekly, test_ts_weekly)
   return(output)
 }
 
 f_create_features <- function(data){
   
-  # Create features data
+  ### Create features data
   data_features <- read.csv(file = paste0(data, ".csv"),
                             header = TRUE,
                             sep = ',')
   #str(data_features)
-  features <- data_features[,-c(1:6)]
+  cols_to_keep <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.", "Precipitation.in.", "date")
+  features <- data_features[,cols_to_keep]
   
   # Set "time" as date -> writing to csv has made this chr again (Wind direction and weather condition too)
   f <- "%Y-%M-%d"
   data_features$date <- as.Date(as.character(data_features$date), dateformat = f)
   
-  # Make out-of-period sample => Train set : 2036-2038 / Test set: 2039
+  ### Make out-of-period sample => Train set : 2036-2038 / Test set: 2039
   indTRAIN <- as.Date(as.Date("2036-02-08", dateformat = f, origin = "1970-01-01") : as.Date("2038-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
   indTEST <- as.Date(as.Date("2039-01-01", dateformat = f, origin = "1970-01-01") : as.Date("2039-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
   
@@ -72,6 +74,9 @@ f_create_features <- function(data){
   train_features[cols_to_impute] <- imputeMissings::impute(train_features[cols_to_impute])
   test_features[cols_to_impute] <- imputeMissings::impute(test_features[cols_to_impute])
   # numeric/integer vectors are imputed with the median
+  
+  # Define feature columns (without date variable)
+  #cols_features <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.", "Precipitation.in.")
   
   # Prepare training set
   train_features_agg <- aggregate(train_features, by = list(Date = train_features$date), mean)
@@ -118,7 +123,7 @@ f_create_features <- function(data){
 }
 
 ##### Create datasets
-datasets <- f_prepare_timeseries_data(data = "basetable")
+datasets <- f_prepare_timeseries(data = "basetable")
 
 big_train <- datasets[[1]]
 train <- datasets[[2]]
@@ -132,6 +137,7 @@ autoplot(big_train, color = "blue") + xlab("Weeks") + ylab("Counts")
 ##### BENCHMARK
 if(!require('forecast')) { install.packages('forecast', quietly = TRUE) }; require('forecast', quietly = TRUE)
 library(forecast)
+
 
 ### 1) ETS: Exponential Smoothing State Space Model
 

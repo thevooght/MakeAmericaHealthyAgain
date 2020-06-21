@@ -1,4 +1,4 @@
-f_prepare_forecast_data <- function(data) {
+f_data_preparation <- function(data) {
   
   ### Read in data
   dat <- read.csv(file = paste0(data, ".csv"),
@@ -66,7 +66,7 @@ f_prepare_forecast_data <- function(data) {
   return(dat)
 }
 
-basetable <- f_prepare_forecast_data(data = "futureAccidentDATA")
+basetable <- f_data_preparation(data = "futureAccidentDATA")
 
 # Inspect basetable
 summary(basetable)
