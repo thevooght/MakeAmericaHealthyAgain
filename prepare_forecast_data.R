@@ -28,13 +28,7 @@ f_prepare_forecast_data <- function(data) {
   # windchill has 62% missing values -> just delete this variable (? -> assumption that this would be =0 would be weird, as this can also be negative)
   dat$Wind_Chill.F.<- NULL
   
-  # NA's in wind_speed, visibility, temp, humidity, pressure -> impute
-  if(!require('imputeMissings')) { install.packages('imputeMissings', quietly = TRUE) }; require('imputeMissings', quietly = TRUE)
-  library(imputeMissings)
-  
-  cols_to_impute <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.")
-  dat[cols_to_impute] <- imputeMissings::impute(dat[cols_to_impute])
-    # numeric/integer vectors are imputed with the median
+  # NA's in wind_speed, visibility, temp, humidity, pressure -> impute after splitting the data into training and test set
   
   # Replace empty strings with NA values
   dat$City[dat$City == ""] <- NA
