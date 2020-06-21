@@ -33,7 +33,7 @@ f_prepare_timeseries <- function(data) {
   
   ### Create weekly time-series & split in training and test set
   train_ts_weekly <- ts(data = dat_agg_weekly$Freq[dat_agg_weekly$Date %in% indTRAIN],
-                        start = c(2036,6), end = c(2038,52), frequency = 52)
+                        start = c(2036,7), end = c(2038,52), frequency = 52)
   # Why start =  c(2036,7)? -> You start 2036 at week 7 (after removing the first uncomplete week)
   # Why end = c(2038,52)? -> You end in 2038 after 52 weeks
   
@@ -74,10 +74,7 @@ f_create_features <- function(data){
   train_features[cols_to_impute] <- imputeMissings::impute(train_features[cols_to_impute])
   test_features[cols_to_impute] <- imputeMissings::impute(test_features[cols_to_impute])
   # numeric/integer vectors are imputed with the median
-  
-  # Define feature columns (without date variable)
-  #cols_features <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.", "Precipitation.in.")
-  
+
   # Prepare training set
   train_features_agg <- aggregate(train_features, by = list(Date = train_features$date), mean)
   train_features_agg$Date <- as.Date(train_features_agg$Date)
@@ -87,7 +84,8 @@ f_create_features <- function(data){
                  mutate_fun = apply.weekly,
                  FUN = mean)
   train_features_week$Date <- as.Date(train_features_week$Date)
-  train_features_week <- train_features_week[-1,] # start from first full week
+  train_features_week <- train_features_week[2:(nrow(train_features_week)-1),]
+  # start from first full week & remove last week as this is also an incomplete week (and is not considered in the TS)
   
   # Prepare test set
   test_features_agg <- aggregate(test_features, by = list(Date = test_features$date), mean)
@@ -132,7 +130,7 @@ test <- datasets[[3]]
 ##### Visualize the time series
 if(!require('ggfortify')) { install.packages('ggfortify', quietly = TRUE) }; require('ggfortify', quietly = TRUE) #for plotting timeseries
 library(ggfortify)  
-autoplot(big_train, color = "blue") + xlab("Weeks") + ylab("Counts")
+autoplot(train, color = "blue") + xlab("Weeks") + ylab("Counts")
 
 ##### BENCHMARK
 if(!require('forecast')) { install.packages('forecast', quietly = TRUE) }; require('forecast', quietly = TRUE)
