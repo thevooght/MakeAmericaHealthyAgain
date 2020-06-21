@@ -73,66 +73,72 @@ test_months <- datasets[[4]]
 ##### Visualize the time series
 if(!require('ggfortify')) { install.packages('ggfortify', quietly = TRUE) }; require('ggfortify', quietly = TRUE) #for plotting timeseries
 library(ggfortify)
-# Weekly
-autoplot(train_weeks, color = "blue") + xlab("Weeks") + ylab("Counts")
-# Monthly
-autoplot(train_months, color = "blue") + xlab("Months") + ylab("Counts")
+autoplot(train_weeks, color = "blue") + xlab("Weeks") + ylab("Counts") # Weekly
+autoplot(train_months, color = "blue") + xlab("Months") + ylab("Counts") # Monthly
 
 ##### BENCHMARK
 if(!require('forecast')) { install.packages('forecast', quietly = TRUE) }; require('forecast', quietly = TRUE)
 library(forecast)
 
 ### 1) ETS: Exponential Smoothing State Space Model
-
-# WEEKLY
 ets_week <- ets(train_weeks, model = "ZZN")
 fc_ets_week <- forecast(ets_week, h=52) # h = number of periods for forecasting
 plot(fc_ets_week) # ANN = simple exponential smoothing
 
-# MONTHLY
 ets_month <- ets(train_months, model = "ZZN")
 fc_ets_month <- forecast(ets_month, h=12) # h = number of periods for forecasting
 plot(fc_ets_month)
 
 ### 2) Arima model
-
-# WEEKLY
 arima_week  <- auto.arima(train_weeks, approximation=FALSE, stepwise=FALSE)
 fc_arima_week <- forecast(arima_week, h=52)
 plot(fc_arima_week)
 
-# MONTHLY
 arima_month  <- auto.arima(train_months, approximation=FALSE, stepwise=FALSE)
 fc_arima_month <- forecast(arima_month, h=12)
 plot(fc_arima_month)
 
 ### 3) Neural Net
-
-# WEEKLY
-nnetar_week  <- nnetar(train_weeks, p=1, P=1)
+nnetar_week  <- nnetar(train_weeks)
 fc_nnetar_week <- forecast(nnetar_week, h=52)
 plot(fc_nnetar_week)
 
-# MONTHLY
-nnetar_month  <- nnetar(train_months, p=1, P=1)
+nnetar_month  <- nnetar(train_months)
 fc_nnetar_month <- forecast(nnetar_month, h=12)
 plot(fc_nnetar_month)
 
-### 4) Ensemble
+### 4) STL: Seasonal and Trend decomposition using Loess
+stl_week <- stlf(train_weeks)
+fc_stl_week <- forecast(stl_week, h=52)  
+plot(fc_stl_week)
 
-# WEEKLY
-fc_ensemble_week <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_week)[1], 
-                                                       data.frame(fc_arima_week)[1], 
-                                                       data.frame(fc_nnetar_week)[1])))
-# MONTHLY
-#issue in forecast of nnetar -> transform output
+stl_month <- stlf(train_months)
+fc_stl_month <- forecast(stl_month, h=12)  
+plot(fc_stl_month)
+
+### 5) Random Walk
+stl_rw_week <- stlf(train_weeks, forecastfunction=rwf) # apply random walk
+fc_stl_rw_week <- forecast(stl_rw_week, h=52) 
+plot(fc_stl_rw_week)
+
+stl_rw_month <- stlf(train_months, forecastfunction=rwf) # apply random walk
+fc_stl_rw_month <- forecast(stl_rw_month, h=12)  
+plot(fc_stl_rw_month)
+
+### 6) Ensemble
+fc_ensemble_week <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_arima_week)[1], 
+                                                       data.frame(fc_nnetar_week)[1],
+                                                       data.frame(fc_stl_week)[1],
+                                                       data.frame(fc_stl_rw_week)[1])))
+#transform output of neural net
 fc_nnetar_month_transformed <- as.data.frame(t(data.frame(fc_nnetar_month)))
 names(fc_nnetar_month_transformed)[1] <- 'Point.Forecast'
 fc_nnetar_month_transformed$Point.Forecast <- as.double(fc_nnetar_month_transformed$Point.Forecast)
 #compute ensemble
-fc_ensemble_month <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_month)[1], 
-                                                        data.frame(fc_arima_month)[1], 
-                                                        data.frame(fc_nnetar_month_transformed)[1])))
+fc_ensemble_month <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_arima_month)[1], 
+                                                        data.frame(fc_nnetar_month_transformed)[1],
+                                                        data.frame(fc_stl_month)[1],
+                                                        data.frame(fc_stl_rw_month)[1])))
 
 ### Evaluate performance on out-of-sample set
 
@@ -147,14 +153,20 @@ fc_ensemble_month <- ts(fc_ensemble_month$fc_ENS,
 # RMSE and MAE are scale dependent errors, wheras MAPE and MASE are scale-independent
 # SO: use RMSE and MAE to compare monthly and weekly each, MAPE can be used to compare weekly vs. monthly
 
-# WEEKLY
-forecast::accuracy(object = fc_ets_week, x = test_weeks)[,c("RMSE","MAE", "MAPE")]
-forecast::accuracy(object = fc_arima_week, x = test_weeks)[,c("RMSE","MAE", "MAPE")]
-forecast::accuracy(object = fc_nnetar_week, x = test_weeks)[,c("RMSE","MAE", "MAPE")]
-forecast::accuracy(object = fc_ensemble_week, x = test_weeks)[,c("RMSE","MAE", "MAPE")]
+# Weekly
+forecast::accuracy(object = fc_arima_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_nnetar_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_stl_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_stl_rw_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_ensemble_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 
-# MONTHLY
-forecast::accuracy(object = fc_ets_month, x = test_months)[,c("RMSE","MAE", "MAPE")]
-forecast::accuracy(object = fc_arima_month, x = test_months)[,c("RMSE","MAE", "MAPE")]
-forecast::accuracy(object = fc_nnetar_month, x = test_months)[,c("RMSE","MAE", "MAPE")]
-forecast::accuracy(object = fc_ensemble_month, x = test_months)[,c("RMSE","MAE", "MAPE")]
+# Monthly
+forecast::accuracy(object = fc_arima_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_nnetar_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_stl_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_stl_rw_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_ensemble_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+
+### Conclusion
+# Ensemble for weekly is best method
+
