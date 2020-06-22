@@ -153,7 +153,7 @@ fc_ensemble_week <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_week)[1
 #transform monthly output of neural net
 fc_nnetar_month_transformed <- as.data.frame(t(data.frame(fc_nnetar_month)))
 names(fc_nnetar_month_transformed)[1] <- 'Point.Forecast'
-fc_nnetar_month_transformed$Point.Forecast <- as.double(fc_nnetar_month_transformed$Point.Forecast)
+fc_nnetar_month_transformed$Point.Forecast <- as.numeric(as.character(fc_nnetar_month_transformed$Point.Forecast))
 #compute ensemble
 fc_ensemble_month <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_month)[1],
                                                         data.frame(fc_arima_month)[1], 
