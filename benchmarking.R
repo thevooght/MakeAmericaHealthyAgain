@@ -80,16 +80,23 @@ autoplot(train_months, color = "blue") + xlab("Months") + ylab("Counts") # Month
 if(!require('forecast')) { install.packages('forecast', quietly = TRUE) }; require('forecast', quietly = TRUE)
 library(forecast)
 
-### 1) ETS: Exponential Smoothing State Space Model
+### 1) Naive: Any forecasting method should be evaluated by being compared to a naive method
+fc_naive_week = snaive(train_weeks, h=52)
+plot(fc_naive_week)
+
+fc_naive_month = snaive(train_months, h=12)
+plot(fc_naive_month)
+
+### 2) ETS: Exponential Smoothing State Space Model
 ets_week <- ets(train_weeks, model = "ZZN")
 fc_ets_week <- forecast(ets_week, h=52) # h = number of periods for forecasting
 plot(fc_ets_week) # ANN = simple exponential smoothing
 
 ets_month <- ets(train_months, model = "ZZN")
-fc_ets_month <- forecast(ets_month, h=12) # h = number of periods for forecasting
+fc_ets_month <- forecast(ets_month, h=12)
 plot(fc_ets_month)
 
-### 2) Arima model
+### 3) Arima model
 arima_week  <- auto.arima(train_weeks, approximation=FALSE, stepwise=FALSE)
 fc_arima_week <- forecast(arima_week, h=52)
 plot(fc_arima_week)
@@ -98,7 +105,7 @@ arima_month  <- auto.arima(train_months, approximation=FALSE, stepwise=FALSE)
 fc_arima_month <- forecast(arima_month, h=12)
 plot(fc_arima_month)
 
-### 3) Neural Net
+### 4) Neural Net
 nnetar_week  <- nnetar(train_weeks)
 fc_nnetar_week <- forecast(nnetar_week, h=52)
 plot(fc_nnetar_week)
@@ -107,7 +114,7 @@ nnetar_month  <- nnetar(train_months)
 fc_nnetar_month <- forecast(nnetar_month, h=12)
 plot(fc_nnetar_month)
 
-### 4) STL: Seasonal and Trend decomposition using Loess
+### 5) STL: Seasonal and Trend decomposition using Loess
 stl_week <- stlf(train_weeks)
 fc_stl_week <- forecast(stl_week, h=52)  
 plot(fc_stl_week)
@@ -116,7 +123,7 @@ stl_month <- stlf(train_months)
 fc_stl_month <- forecast(stl_month, h=12)  
 plot(fc_stl_month)
 
-### 5) Random Walk
+### 6) Random Walk
 stl_rw_week <- stlf(train_weeks, forecastfunction=rwf) # apply random walk
 fc_stl_rw_week <- forecast(stl_rw_week, h=52) 
 plot(fc_stl_rw_week)
@@ -125,20 +132,35 @@ stl_rw_month <- stlf(train_months, forecastfunction=rwf) # apply random walk
 fc_stl_rw_month <- forecast(stl_rw_month, h=12)  
 plot(fc_stl_rw_month)
 
-### 6) Ensemble
-fc_ensemble_week <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_arima_week)[1], 
+### 7) TBATS
+# BATS and TBATS allow for multiple seasonalities. 
+# TBATS is a modification (an improvement really) of BATS that allows for multiple non-integer seasonality cycles.
+tbats_week = tbats(train_weeks)
+fc_tbats_week = forecast(tbats_week, h=52)
+plot(fc_tbats_week)
+
+tbats_month = tbats(train_months)
+fc_tbats_month = forecast(tbats_month, h=12)
+plot(fc_tbats_month)
+
+### 7) Ensemble
+fc_ensemble_week <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_week)[1],
+                                                       data.frame(fc_arima_week)[1], 
                                                        data.frame(fc_nnetar_week)[1],
                                                        data.frame(fc_stl_week)[1],
-                                                       data.frame(fc_stl_rw_week)[1])))
-#transform output of neural net
+                                                       data.frame(fc_stl_rw_week)[1],
+                                                       data.frame(fc_tbats_week)[1])))
+#transform monthly output of neural net
 fc_nnetar_month_transformed <- as.data.frame(t(data.frame(fc_nnetar_month)))
 names(fc_nnetar_month_transformed)[1] <- 'Point.Forecast'
 fc_nnetar_month_transformed$Point.Forecast <- as.double(fc_nnetar_month_transformed$Point.Forecast)
 #compute ensemble
-fc_ensemble_month <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_arima_month)[1], 
+fc_ensemble_month <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_month)[1],
+                                                        data.frame(fc_arima_month)[1], 
                                                         data.frame(fc_nnetar_month_transformed)[1],
                                                         data.frame(fc_stl_month)[1],
-                                                        data.frame(fc_stl_rw_month)[1])))
+                                                        data.frame(fc_stl_rw_month)[1],
+                                                        data.frame(fc_tbats_month)[1])))
 
 ### Evaluate performance on out-of-sample set
 
@@ -154,19 +176,27 @@ fc_ensemble_month <- ts(fc_ensemble_month$fc_ENS,
 # SO: use RMSE and MAE to compare monthly and weekly each, MAPE can be used to compare weekly vs. monthly
 
 # Weekly
+forecast::accuracy(object = fc_naive_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_ets_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_arima_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_nnetar_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_stl_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_stl_rw_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_tbats_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_ensemble_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 
 # Monthly
+forecast::accuracy(object = fc_naive_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_ets_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_arima_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_nnetar_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_stl_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_stl_rw_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+forecast::accuracy(object = fc_tbats_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
 forecast::accuracy(object = fc_ensemble_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
 
 ### Conclusion
-# Ensemble for weekly is best method
+# Naive & tbats has a much higher training error than test error => counter intuitive and therefore not trustworthy
+# (We probably should have more data)
+# The results from the neural network model make more sense and are better than the other methods so this is chosen
 
