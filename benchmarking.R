@@ -1,3 +1,6 @@
+### FUNCTIONS
+######################################################################################################
+
 f_prepare_timeseries <- function(data) {
   
   ### Read in data
@@ -56,12 +59,89 @@ f_prepare_timeseries <- function(data) {
   # Why end = c(2038,12)? -> You end in month 12 of 2038
   
   test_ts_monthly <- ts(data = dat_agg_monthly$Freq[dat_agg_monthly$Date %in% indTEST],
-                       start = c(2039,1), end = c(2039,12), frequency = 12)
+                        start = c(2039,1), end = c(2039,12), frequency = 12)
   # Start at month 1, end in month 12
   
   output <- list(train_ts_weekly, test_ts_weekly, train_ts_montly, test_ts_monthly)
   return(output)
 }
+
+f_create_features <- function(data){
+  
+  ### Create features data
+  data_features <- read.csv(file = paste0(data, ".csv"),
+                            header = TRUE,
+                            sep = ',')
+  #str(data_features)
+  cols_to_keep <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.", "Precipitation.in.", "date")
+  data_features <- data_features[,cols_to_keep]
+  
+  # Set "time" as date -> writing to csv has made this chr again (Wind direction and weather condition too)
+  f <- "%Y-%M-%d"
+  data_features$date <- as.Date(as.character(data_features$date), dateformat = f)
+  
+  ### Make out-of-period sample => Train set : 2036-2038 / Test set: 2039
+  indTRAIN <- as.Date(as.Date("2036-02-08", dateformat = f, origin = "1970-01-01") : as.Date("2038-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
+  indTEST <- as.Date(as.Date("2039-01-01", dateformat = f, origin = "1970-01-01") : as.Date("2039-12-31", origin = "1970-01-01"), dateformat = f, origin = "1970-01-01")
+  
+  # Create train and test set
+  train_features <- data_features[data_features$date %in% indTRAIN,]
+  test_features <- data_features[data_features$date %in% indTEST, ]
+  
+  # NA's in wind_speed, visibility, temp, humidity, pressure -> impute
+  if(!require('imputeMissings')) { install.packages('imputeMissings', quietly = TRUE) }; require('imputeMissings', quietly = TRUE)
+  library(imputeMissings)
+  cols_to_impute <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.")
+  train_features[cols_to_impute] <- imputeMissings::impute(train_features[cols_to_impute])
+  test_features[cols_to_impute] <- imputeMissings::impute(test_features[cols_to_impute])
+  # numeric/integer vectors are imputed with the median
+  
+  ## Prepare training set
+  train_features_agg <- aggregate(train_features, by = list(Date = train_features$date), mean)
+  train_features_agg$Date <- as.Date(train_features_agg$Date)
+  #week
+  train_features_week <- train_features_agg %>%
+    tq_transmute(select = c(Temperature.F., Humidity..., Pressure.in., Visibility.mi., Wind_Speed.mph., Precipitation.in.),
+                 mutate_fun = apply.weekly,
+                 FUN = mean)
+  train_features_week$Date <- as.Date(train_features_week$Date)
+  train_features_week <- train_features_week[2:(nrow(train_features_week)-1),]
+  # start from first full week & remove last week as this is also an incomplete week (and is not considered in the TS)
+  #month
+  train_features_month <- train_features_agg %>%
+    tq_transmute(select = c(Temperature.F., Humidity..., Pressure.in., Visibility.mi., Wind_Speed.mph., Precipitation.in.),
+                 mutate_fun = apply.monthly,
+                 FUN = mean)
+  train_features_month$Date <- as.Date(train_features_month$Date)
+  train_features_month <- train_features_month[2:(nrow(train_features_month)),] #start from first full month
+  
+  ## Prepare test set
+  #week
+  test_features_agg <- aggregate(test_features, by = list(Date = test_features$date), mean)
+  test_features_agg$Date <- as.Date(test_features_agg$Date)
+  
+  test_features_week <- test_features_agg %>%
+    tq_transmute(select = c(Temperature.F., Humidity..., Pressure.in., Visibility.mi., Wind_Speed.mph., Precipitation.in.),
+                 mutate_fun = apply.weekly,
+                 FUN = mean)
+  test_features_week$Date <- as.Date(test_features_week$Date)
+  test_features_week <- test_features_week[-1,] # start from first full week
+  #month
+  test_features_agg <- aggregate(test_features, by = list(Date = test_features$date), mean)
+  test_features_agg$Date <- as.Date(test_features_agg$Date)
+  
+  test_features_month <- test_features_agg %>%
+    tq_transmute(select = c(Temperature.F., Humidity..., Pressure.in., Visibility.mi., Wind_Speed.mph., Precipitation.in.),
+                 mutate_fun = apply.monthly,
+                 FUN = mean)
+  test_features_month$Date <- as.Date(test_features_month$Date)
+  
+  output <- list(train_features_week, test_features_week, train_features_month,test_features_month)
+  return(output)
+}
+
+##### BENCHMARKING
+######################################################################################################
 
 ##### Create datasets
 datasets <- f_prepare_timeseries(data = "basetable")
@@ -69,6 +149,13 @@ train_weeks <- datasets[[1]]
 test_weeks <- datasets[[2]]
 train_months <- datasets[[3]]
 test_months <- datasets[[4]]
+
+##### Create features
+datasets <- f_create_features(data = "basetable")
+train_fweek <- datasets[[1]]
+test_fweek<- datasets[[2]]
+train_fmonth <- datasets[[3]]
+test_fmonth<- datasets[[4]]
 
 ##### Visualize the time series
 if(!require('ggfortify')) { install.packages('ggfortify', quietly = TRUE) }; require('ggfortify', quietly = TRUE) #for plotting timeseries
@@ -97,6 +184,7 @@ fc_ets_month <- forecast(ets_month, h=12)
 plot(fc_ets_month)
 
 ### 3) Arima model
+#w/o features
 arima_week  <- auto.arima(train_weeks, approximation=FALSE, stepwise=FALSE)
 fc_arima_week <- forecast(arima_week, h=52)
 plot(fc_arima_week)
@@ -105,7 +193,17 @@ arima_month  <- auto.arima(train_months, approximation=FALSE, stepwise=FALSE)
 fc_arima_month <- forecast(arima_month, h=12)
 plot(fc_arima_month)
 
+#w features
+arima_exog_week  <- auto.arima(train_weeks, approximation = FALSE, stepwise = TRUE, xreg = as.matrix(train_fweek[,-1]))
+fc_arima_exog_week <- forecast(arima_exog_week, h=52, xreg = as.matrix(test_fweek[,-1]))
+plot(fc_arima_exog_week)
+
+arima_exog_month <- auto.arima(train_months, approximation = FALSE, stepwise = TRUE, xreg = as.matrix(train_fmonth[,-1])) 
+fc_arima_exog_month <- forecast(arima_exog_month, h=52, xreg = as.matrix(test_fmonth[,-1]))
+plot(fc_arima_exog_month)
+
 ### 4) Neural Net
+#w/o features
 nnetar_week  <- nnetar(train_weeks)
 fc_nnetar_week <- forecast(nnetar_week, h=52)
 plot(fc_nnetar_week)
@@ -113,6 +211,15 @@ plot(fc_nnetar_week)
 nnetar_month  <- nnetar(train_months)
 fc_nnetar_month <- forecast(nnetar_month, h=12)
 plot(fc_nnetar_month)
+
+#w features
+nnetar_exog_week  <- nnetar(train_weeks, p = 1, P =1, xreg = as.matrix(train_fweek[,-1]))
+fc_nnetar_exog_week <- forecast(nnetar_exog_week, h=52, xreg = as.matrix(test_fweek[,-1]))
+plot(fc_nnetar_exog_week)
+
+nnetar_exog_month  <- nnetar(train_months, p = 1, P =1, xreg = as.matrix(train_fmonth[,-1]))
+fc_nnetar_exog_month <- forecast(nnetar_exog_month, h=52, xreg = as.matrix(test_fmonth[,-1]))
+plot(fc_nnetar_exog_month)
 
 ### 5) STL: Seasonal and Trend decomposition using Loess
 stl_week <- stlf(train_weeks)
@@ -150,11 +257,11 @@ fc_ensemble_week <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_week)[1
                                                        data.frame(fc_stl_week)[1],
                                                        data.frame(fc_stl_rw_week)[1],
                                                        data.frame(fc_tbats_week)[1])))
-#transform monthly output of neural net
+# Transform monthly output of neural net
 fc_nnetar_month_transformed <- as.data.frame(t(data.frame(fc_nnetar_month)))
 names(fc_nnetar_month_transformed)[1] <- 'Point.Forecast'
 fc_nnetar_month_transformed$Point.Forecast <- as.numeric(as.character(fc_nnetar_month_transformed$Point.Forecast))
-#compute ensemble
+# Compute ensemble
 fc_ensemble_month <- data.frame(fc_ENS = rowMeans(cbind(data.frame(fc_ets_month)[1],
                                                         data.frame(fc_arima_month)[1], 
                                                         data.frame(fc_nnetar_month_transformed)[1],
@@ -176,27 +283,127 @@ fc_ensemble_month <- ts(fc_ensemble_month$fc_ENS,
 # SO: use RMSE and MAE to compare monthly and weekly each, MAPE can be used to compare weekly vs. monthly
 
 # Weekly
-forecast::accuracy(object = fc_naive_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_ets_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_arima_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_nnetar_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_stl_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_stl_rw_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_tbats_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_ensemble_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+naive_week_acc <- forecast::accuracy(object = fc_naive_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+ets_week_acc <- forecast::accuracy(object = fc_ets_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+arima_week_acc <- forecast::accuracy(object = fc_arima_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+arima_exog_week_acc <- forecast::accuracy(object = fc_arima_exog_week, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+nnetar_week_acc <- forecast::accuracy(object = fc_nnetar_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+nnetar_exog_week_acc <- forecast::accuracy(object = fc_nnetar_exog_week, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+stl_week_acc <- forecast::accuracy(object = fc_stl_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+stl_rw_week_acc <- forecast::accuracy(object = fc_stl_rw_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+tbats_week_acc <- forecast::accuracy(object = fc_tbats_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
+ensemble_week_acc <- forecast::accuracy(object = fc_ensemble_week, x = test_weeks)[,c("RMSE", "MAE", "MAPE")]
 
 # Monthly
-forecast::accuracy(object = fc_naive_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_ets_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_arima_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_nnetar_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_stl_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_stl_rw_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_tbats_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
-forecast::accuracy(object = fc_ensemble_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+naive_month_acc <- forecast::accuracy(object = fc_naive_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+ets_month_acc <- forecast::accuracy(object = fc_ets_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+arima_month_acc <- forecast::accuracy(object = fc_arima_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+arima_exog_month_acc <- forecast::accuracy(object = fc_arima_exog_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+nnetar_month_acc <- forecast::accuracy(object = fc_nnetar_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+nnetar_exog_month_acc <- forecast::accuracy(object = fc_nnetar_exog_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+stl_month_acc <- forecast::accuracy(object = fc_stl_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+stl_rw_month_acc <- forecast::accuracy(object = fc_stl_rw_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+tbats_month_acc <- forecast::accuracy(object = fc_tbats_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+ensemble_month_acc <- forecast::accuracy(object = fc_ensemble_month, x = test_months)[,c("RMSE", "MAE", "MAPE")]
+
+print(naive_week_acc)
+print(ets_week_acc)
+print(arima_week_acc)
+print(arima_exog_week_acc)
+print(nnetar_week_acc)
+print(nnetar_exog_week_acc)
+print(stl_week_acc)
+print(stl_rw_week_acc)
+print(tbats_week_acc)
+print(ensemble_week_acc)
+
+print(naive_month_acc)
+print(ets_month_acc)
+print(arima_month_acc)
+print(arima_exog_month_acc)
+print(nnetar_month_acc)
+print(nnetar_exog_month_acc)
+print(stl_month_acc)
+print(stl_rw_month_acc)
+print(tbats_month_acc)
+print(ensemble_month_acc)
 
 ### Conclusion
 # Naive & tbats has a much higher training error than test error => counter intuitive and therefore not trustworthy
 # (We probably should have more data)
 # The results from the neural network model make more sense and are better than the other methods so this is chosen
 
+##### Producing graphs for slides
+
+# naive and tbats
+graph <- rbind(naive_week_acc, naive_month_acc, tbats_month_acc, tbats_week_acc)
+barplot(naive_month_acc[,-3], beside=TRUE, col=c('dark blue','white'), legend.text=TRUE, main='Naive Bayes for monthly data')
+barplot(naive_week_acc[,-3], beside=TRUE, col=c('dark blue','white'), main='Naive Bayes for weekly data ')
+barplot(naive_month_acc[,3], beside=TRUE, col=c('dark blue','white'), space=0, main='Naive Bayes MAPE for monthly data')
+barplot(naive_week_acc[,3], beside=TRUE, col=c('dark blue','white'), space=0, main='Naive Bayes MAPE for weekly data')
+barplot(tbats_month_acc[,3], beside=TRUE, col=c('dark blue','white'), space=0,main='TBATS MAPE for monthly data')
+barplot(tbats_week_acc[,3], beside=TRUE, col=c('dark blue','white'), space= 0, main='TBATS MAPE for weekly data')
+
+# MAPE to compare weekly and monhly data
+graph <- data.frame( 'MAPE' = rbind(ets_week_acc[2,3], ets_month_acc[2,3], arima_week_acc[2,3], arima_month_acc[2,3],
+                                    arima_exog_week_acc[2,3] ,arima_exog_month_acc[2,3], nnetar_week_acc[2,3],nnetar_month_acc[2,3], 
+                                    nnetar_exog_week_acc[2,3] ,nnetar_exog_month_acc[2,3], stl_week_acc[2,3], stl_month_acc[2,3], 
+                                    stl_rw_week_acc[2,3], stl_rw_month_acc[2,3], ensemble_week_acc[3], ensemble_month_acc[3]),
+                     'name' = c('ets_week', 'ets_month', 'arima_week', 'arima_month','arima_exog_week', 'arima_exog_month', 'nnetar_week',
+                                'nnetar_month', 'nnetar_exog_week','nnetar_exog_month', 'stl_week', 'stl_month', 
+                                'stl+rw_week', 'stl+rw_month','ensemble_week', 'ensemble_month'))
+library("ggplot2")
+library('tidyverse')
+library(forcats)
+
+graph %>%
+  mutate(name = fct_reorder(name, MAPE)) %>%
+  ggplot(aes(x= name, y = MAPE ))+
+  geom_bar(stat = 'identity',aes(fill = MAPE))+ 
+  theme(axis.text.x = element_text(angle = 30))+
+  labs(title = 'MAPE', y='',x='')+ 
+  theme(axis.ticks = element_blank())+
+  scale_fill_gradient2(low='white', mid='deepskyblue1', high='navyblue')+ 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.y  = element_line(colour = "black"))
+
+# RMSE monthly
+graph <- data.frame( 'RMSE' = rbind(ets_month_acc[2,1], arima_month_acc[2,1],
+                                    arima_exog_month_acc[2,1], nnetar_exog_month_acc[2,1],
+                                    nnetar_month_acc[2,1], stl_month_acc[2,1],
+                                    stl_rw_month_acc[2,1], ensemble_month_acc[1]),
+                     'name' = c('ets', 'arima w/o features','arima w/ features',
+                                'nnetar w/ features' ,'nnetar w/o features',
+                                'stl', 'stl+rw',
+                                'ensemble'))
+graph %>%
+  mutate(name = fct_reorder(name, RMSE)) %>%
+  ggplot(aes(x= name, y = RMSE ))+
+  geom_bar(stat = 'identity',aes(fill = RMSE))+ 
+  theme(axis.text.x = element_text(angle = 20))+
+  labs(title = 'RMSE', y='',x='')+ 
+  theme(axis.ticks = element_blank(),text = element_text(size=15))+
+  scale_fill_gradient2(low='white', mid='deepskyblue1', high='navyblue')+ 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line.y  = element_line(colour = "black"))
+
+# MAE monthly
+graph <- data.frame( 'MAE' = rbind(ets_month_acc[2,2], arima_month_acc[2,2],
+                                   arima_exog_month_acc[2,1], nnetar_exog_month_acc[2,1],
+                                   nnetar_month_acc[2,2],stl_month_acc[2,2],
+                                   stl_rw_month_acc[2,2], ensemble_month_acc[2]),
+                     'name' = c('ets', 'arima w/o features','arima w/ features',
+                                'nnetar w/ features' ,'nnetar w/o features',
+                                'stl', 'stl+rw',
+                                'ensemble'))
+
+graph %>%
+  mutate(name = fct_reorder(name, MAE)) %>%
+  ggplot(aes(x= name, y = MAE ))+
+  geom_bar(stat = 'identity',aes(fill = MAE))+ 
+  theme(axis.text.x = element_text(angle = 20))+
+  labs(title = 'MAE', y='',x='')+ 
+  theme(axis.ticks = element_blank(),text = element_text(size=15))+
+  scale_fill_gradient2(low='white', mid='deepskyblue1', high='navyblue')+ 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line.y  = element_line(colour = "black"))                                                  

@@ -255,7 +255,7 @@ forecasted_accidents_monthly <- read.csv(file = 'forecasted_accidents_monthly',
                                  header = TRUE,
                                  sep = ',')
 
-f_add_nonaccident_regios <- function(forecasted_accidents_monthly, full_grid_CNT_monthly){
+f_add_nonaccident_regios <- function(forecasted_accidents, full_grid_CNT){
   #The reason for this seperate function is that it reduces the time
   #significantly while otherwise all rows would be looped in the forecast
   #to predict zero accidents.
@@ -274,7 +274,7 @@ f_add_nonaccident_regios <- function(forecasted_accidents_monthly, full_grid_CNT
   return(forecasted_accidents_allRegions)
 }
 
-forecasted_accidents_allRegions_monthly <- f_add_nonaccident_regios(forecasted_accidents_monthly,full_grid_CNT_monthly)
+forecasted_accidents_allRegions_monthly <- f_add_nonaccident_regios(forecasted_accidents_monthly, full_grid_CNT_monthly)
 
 #columns x,y indicates latitude, longitude
 #column Region indicates number of region
