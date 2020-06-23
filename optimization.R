@@ -43,6 +43,7 @@ f_find_closest_hospital <- function(row, hospitals){
     new_closest_hospital_dist <- distm(c(row$Longitude, row$Latitude), 
                                        c(hospitals[i,"Longitude"], hospitals[i,"Latitude"]), 
                                        fun = distHaversine)
+    # Convert meters to miles (1mile = 1meter * 0.00062137)
     new_closest_hospital_dist <- new_closest_hospital_dist * 0.00062137
     if (new_closest_hospital_dist < closest_hospital_dist){
       closest_hospital_dist <- new_closest_hospital_dist
@@ -96,7 +97,7 @@ for (i in 1:nrow(fc_accidents_per_region)){
      * fc_accidents_per_region[i,"Forecast"])
 }
 
-# Convert meters to miles (1mile = 1m * 0.00062137) & save
+# Convert meters to miles (1mile = 1meter * 0.00062137) & save
 total_distance_in_miles <- total_distance[1] * 0.00062137
 hospitals[nbr_hospitals_assigned,"total_distance"] <- total_distance_in_miles
 
@@ -180,9 +181,6 @@ while (new_cost < initial_cost) {
   
   # Keep track of progress
   print(iter)
-  
-  # Update eligible regions
-  eligible_regions <- fc_accidents_per_region[fc_accidents_per_region$Eligible == 1,]
   
   print(new_cost < initial_cost)
 
