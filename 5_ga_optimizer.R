@@ -1,7 +1,7 @@
 ##########################################################################################################
 #                                      MAKE AMERICA HEALTHY AGAIN                                        #
 ##########################################################################################################
-# 4. OPTIMIZATION                                                                                       #
+# 5. OPTIMIZATION                                                                                       #
 ##########################################################################################################
 # Group 17                                                                                               #
 # Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle                        #
@@ -13,6 +13,7 @@ dir <- paste0(getwd(), "/data")
 setwd(dir = dir)
 getwd()
 
+
 ##### LOAD DATA
 ##########################################################################################################
 
@@ -21,6 +22,13 @@ forecasts_regions <- read.csv(file = "forecasted_accidents_allRegions_monthly.cs
                               header = TRUE,
                               sep = ',')
 str(forecasts_regions)
+
+# (test)
+forecasts_regions_cedric <- read.csv(file = "forecasted_accidents_wCity.csv",
+                              header = TRUE,
+                              sep = ',')
+str(forecasts_regions_cedric)
+
 
 
 ##### PRECOMPUTE COST TO DELIVER ANY ACCIDENT TO ANY HOSPITAL
