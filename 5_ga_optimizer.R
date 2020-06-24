@@ -173,9 +173,10 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
   # To eliminate non-existing hospitals from being assigned, set a insane large price to get there.
   m_transport_cost_per_accident[as.logical(m_assignment_mask)==0] = 10000000
   
+  amount_of_hospitals <- length(v_hospital_assignment)
   assigner <- function(v_accident_column) {
     # Empty assignment
-    v_assignment = rep(0, length(v_accident_column))
+    v_assignment = rep(0, amount_of_hospitals)
     # Find location i where the hospital cost is minimum.
     # Select the first hospital we find available (in case multiple hospitals have the same cost).
     minimum <- c(min(v_accident_column))
