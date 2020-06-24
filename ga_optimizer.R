@@ -1,5 +1,6 @@
 library(GA)
 
+# BASE TABLE
 # The basetable matrix for this optimization must look like this.
 ###############################################################################################
 #     x      |      y      |     eligible_hospital    |     inhabitants  |  total_accidents   #
@@ -7,6 +8,7 @@ library(GA)
 #     -128   |      48.9   |        TRUE              |    59500        |     1523            #
 ###############################################################################################
 
+# BASE TABLE AFTER OPTIMIZATION
 # After the optimization, a new column "build_hospital" will be attached.
 ###############################################################################################################################################################################################
 #     x      |      y      |     eligible_hospital    |   inhabitants  |  total_accidents   |   build_hospital  |    investment_cost  |   operational_cost  |  transport_cost  | total_cost   #
@@ -25,7 +27,11 @@ f_create_aggregate_accidents_to_total <- function(df_grid) {
 
 grid_CNT <- f_create_aggregate_accidents_to_total(grid_CNT)
 
-
+# TODO: FAKE ASS ELIGIBLE SHIT AND CITIZNS!
+grid_CNT$eligible_hospital = FALSE
+grid_CNT[grid_CNT$X < 700,]$eligible_hospital = TRUE
+grid_CNT$inhabitants = 100
+grid_CNT[grid_CNT$X < 700,]$inhabitants = 50000
 
 ##########################################################################
 #  Verify whether a given dataframe grid can run through the optimizer   #
@@ -38,9 +44,9 @@ f_verify_valid_table_for_optimization <- function(df_grid) {
   cols <- colnames(df_grid)
   types <- sapply(df_grid, class)
   
-  df_cols_and_types <<- data.frame(cols, types)
+  df_cols_and_types <- data.frame(cols, types)
   
-  expected_cols_and_types <- cbind(c("x", "numeric"), c("y", "numeric"), c("eligible", "logical"), c("inhabitants", "numeric"), c("total_accidents", "numeric"))
+  expected_cols_and_types <- cbind(c("x", "numeric"), c("y", "numeric"), c("eligible_hospital", "logical"), c("inhabitants", "numeric"), c("total_accidents", "numeric"))
   f_check <- function(col_and_type_to_check) {
     col = col_and_type_to_check[1]
     type = col_and_type_to_check[2]
@@ -58,10 +64,8 @@ f_verify_valid_table_for_optimization <- function(df_grid) {
     }
   }
   checked <- apply(expected_cols_and_types, 2, f_check)
-  return(sum(checked == 5))
+  return(sum(as.numeric(checked)) == ncol(expected_cols_and_types))
 }
-
-f_verify_valid_table_for_optimization(grid_CNT)
 
 
 ##########################################################################
@@ -72,8 +76,7 @@ f_verify_valid_table_for_optimization(grid_CNT)
 # Generate Total Transport Cost Matrix
 # rows = hospital cells, columns = all accident cells.
 # For each cell in the grid, calculate the total cost of transporting 
-# df_grid: pass a dataframe which contains the following columns: x, y, hospital_feasible. (grid_CNT is guuuud).
-f_generate_matrix_transport_cost <- function(df_grid, cost_per_mile) {
+f_generate_matrix_transport_cost <- function(df_grid) {
   ## Make local matrix of the x,y coords of the grid
   m_grid <- cbind(df_grid$x, df_grid$y)
   
@@ -84,12 +87,11 @@ f_generate_matrix_transport_cost <- function(df_grid, cost_per_mile) {
   m_distances_between_all_regions <- as.matrix(dist(m_grid, diag = TRUE, upper = TRUE))
   
   ## Reduce it to a matrix to only contains the distances to hospitals
-  #TODO: DO NOT USE $X < 700 BUT RATHER WHETHER THE CELL IN THE GRID IS ELIGBLE TO PUT A HOSPITAL!!!
-  cells_in_grid_capable_of_hospital = as.integer(rownames(df_grid[df_grid$X < 700,]))
+  cells_in_grid_capable_of_hospital = as.integer(rownames(df_grid[df_grid$eligible_hospital == TRUE,]))
   # This is a horrible constant that approximates the radian distance to kilometers
   # It's absoluletly horrible but hey, you're asking a european to plan usa hospitals.
   # What do I care?
-  cte_cost_per_kilometer = (cost_per_mile / 1.609344)
+  cte_cost_per_kilometer = (cte_transport_cost_per_mile / 1.609344)
   cte_radian_to_kilometers_coeff = 110
   m_costs_transport <- (cte_cost_per_kilometer * cte_radian_to_kilometers_coeff) * m_distances_between_all_regions[c(cells_in_grid_capable_of_hospital),]
   distances_between_all_regions <- NULL
@@ -99,20 +101,10 @@ f_generate_matrix_transport_cost <- function(df_grid, cost_per_mile) {
   return(m_costs_transport)
 }
 
-
-#points <- matrix(1:8, nrow = 4, ncol = 2)
-m_transport_cost_to_hospital_per_accident <- f_generate_matrix_transport_cost(grid_CNT, cost_per_mile=10)
-
-# We must now calculate the total transport cost.
-# We turn the vector of total amount of accidents into a diagonal matrix
-# and then multiply the matrix of transport cost per accident with the diagonal matrix of total accidents.
-# This calculate the total cost of a cell with accidents to ALL hospitals!
-m_total_transport_cost_for_all_accidents <- m_transport_cost_to_hospital_per_accident %*% diag(grid_CNT$total_accidents)
-
 # Calculate the actual final transport costs, given a matrix that assigns
 # Accident cell i to Hospital cell j.
 # m_assignment must be a matrix of 1 & 0's, and have the same size as m_transport.
-f_calculate_total_transport_cost <- function(m_transport, m_assignment) {
+f_calculate_total_transport_cost_per_hospital <- function(m_transport, m_assignment) {
   if (!identical(dim(m_transport), dim(m_assignment))){
     stop("Assignment matrix and transport matrix must be of equal length!")
   } 
@@ -122,7 +114,9 @@ f_calculate_total_transport_cost <- function(m_transport, m_assignment) {
   }
   # Applies the m_assignment as a "mask" to the transport matrix
   # Which means only the transport costs of an accident cell to the assigned hospital cell are retrieved.
-  v_costs = m_transport[as.logical(m_assignment)==1]
+  # If a cell i is not assigned to hospital j, it receives a cost of 0.
+  m_transport[as.logical(m_assignment)==0] = 0
+  v_costs <- rowSums(m_transport)
   return(v_costs)
 }
 
@@ -164,19 +158,19 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
 
 # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
 # Note: to reduce the search space, the length of this vector is not all possible cells of the grid.
-# But only the cells where a hospital can be built upon (rows where grid_CNT$Eligible == TRUE)
+# But only the cells where a hospital can be built upon (rows where grid_CNT$eligible_hospital == TRUE)
 f_calculate_individual_cost <- function(v_hospital_assignment) {
   # Total amount of hospitals assigned
-  individual_investment_cost = 50000000 * v_hospital_assignment
+  individual_investment_cost = cte_investment_cost_per_hospital * v_hospital_assignment
   
-  # TODO: Total operational cost
-  individual_operational_cost <- (v_hospital_assignment)
+  # Total operational cost
+  individual_operational_cost <- cte_operational_cost_per_hospital * (v_hospital_assignment * v_inhabitants_per_hospital) 
   
   # Total transport cost
   ## Optimize the assignment of accidents to hospitals
   m_assignment <- f_optimal_assignment(v_hospital_assignment, m_transport_cost_to_hospital_per_accident)
   ## Use the optimal assignment as a mask on the total transport cost matrix to only get the transport costs that occur.
-  individual_transport_cost = f_calculate_total_transport_cost(m_total_transport_cost_for_all_accidents, m_assignment)
+  individual_transport_cost = f_calculate_total_transport_cost_per_hospital(m_total_transport_cost_for_all_accidents, m_assignment)
 
   # Bind all the vectors together into a matrix, 
   # each row represent a hospital, 
@@ -201,31 +195,76 @@ f_calculate_total_cost <- function(v_hospital_assignment) {
 }
 
 
+##########################################################################
+##                          Setup Global Environment                    ##
+##########################################################################
+# The setup function that precomputes constant matrices and sets constant values.
+f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
+  # Verify that the basetable is actually suited for optimization.
+  print("[*] Verifying validity of basetable/grid for optimization")
+  f_verify_valid_table_for_optimization(df_grid)
+  
+  print("[*] Setting up constant cost values")
+  cte_investment_cost_per_hospital <<- investment_cost_per_hospital
+  cte_operational_cost_per_hospital <<- operational_cost_per_hospital
+  cte_transport_cost_per_mile <<- transport_cost_per_mile
+  
+  # Precompute the transport cost for each accident to each eligible hospital
+  # Matrix where each row is a hospitals cell, each column is an accident cell.
+  print("[*] Precompution individual transport cost for a single accident from cell i to cell j for optimization")
+  m_transport_cost_to_hospital_per_accident <<- f_generate_matrix_transport_cost(df_grid)
+  
+  # We must now calculate the total transport cost.
+  # We turn the vector of total amount of accidents into a diagonal matrix
+  # and then multiply the matrix of transport cost per accident with the diagonal matrix of total accidents.
+  # This calculate the total cost of a cell with accidents to ALL hospitals!
+  print("[*] Precompution individual transport cost for all accidents from cell i to cell j for optimization")
+  m_total_transport_cost_for_all_accidents <<- m_transport_cost_to_hospital_per_accident %*% diag(df_grid$total_accidents)  
+  
+  print("[*] Storing inhabitants vector of eligible hospitals into global context")
+  v_inhabitants_per_hospital <<- df_grid[df_grid$eligible_hospital == TRUE,]$inhabitants
+}
+
 
 ##########################################################################
 ##                          Genetic Algorithm                           ##
 ##########################################################################
 
-# v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
-# Note: to reduce the search space, the length of this vector is not all possible cells of the grid.
-# But only the cells where a hospital can be built upon (rows where grid_CNT$Eligible == TRUE)
-f_fitness <- function(v_hospital_assignment) {
-  return(f_calculate_total_cost(v_hospital_assignment))
+f_ga_optimize <- function(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
+  #f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile)
   
+  # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
+  # Note: to reduce the search space, the length of this vector is only cells with eligible_hospital == TRUE.
+  f_fitness <- function(v_hospital_assignment) {
+    return(f_calculate_total_cost(v_hospital_assignment))
+    
+  }
+  
+  count_of_eligible_hospitals = sum(df_grid$eligible_hospital)
+  print("[*] Running Genetic Algorithm on the grid")
+  GA <- ga("binary", fitness = f_fitness, maxiter = 100, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
+  summary(GA)
+  return(GA)
 }
-GA <- ga("binary", fitness = f_fitness, maxiter = 1000, run = 200, seed = 123, nBits = 699)
-summary(GA)
 
+# Helper function that returns the cost for a given solution.
+f_check_solution <- function(v_hospital_assignment, df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
+  f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile)
+  cost_result <- f_calculate_total_cost(v_hospital_assignment)
+  return(cost_result)
+}
+# f_check_solution(rep(1, 699), grid_CNT, 50000000,5000 * 20,10)
+
+f_ga_optimize(grid_CNT, 50000000,5000 * 20,10)
 
 ##########################################################################
 ##                            Post Processing                           ##
 ##########################################################################
 
-f_add_optimal_solution_to_grid <- function(v_optimal_hospital_assignment, df_grid) {
+f_build_optimal_grid <- function(v_optimal_hospital_assignment, df_grid) {
   df_grid$build_hospital = FALSE
-  #TODO: DO NOT USE $X < 700 BUT RATHER WHETHER THE CELL IN THE GRID IS ELIGBLE TO PUT A HOSPITAL!!!
-  df_grid[df_grid$X < 700,]$build_hospital = as.logical(v_optimal_hospital_assignment)
+  df_grid[df_grid$eligible_hospital == TRUE,]$build_hospital = as.logical(v_optimal_hospital_assignment)
   return(df_grid)
 }
 
-grid_CNT <- f_add_optimal_solution_to_grid(,df_grid)
+#grid_CNT <- f_add_optimal_solution_to_grid(,df_grid)
