@@ -99,7 +99,7 @@ final_dataset <- f_create_basetable(basetable)
 summary(final_dataset)
 
 # Save dataset
-write.csv(dataset, file = "monthly_accidents_per_city", row.names = TRUE)
+write.csv(final_dataset, file = "monthly_accidents_per_city.csv", row.names = TRUE)
 
 
 ### FORECAST
@@ -110,42 +110,42 @@ data <- read.csv(file = "monthly_accidents_per_city.csv",
                  sep = ',')
 
 forecasted_accidents_monthly <- f_forecast_city_month(historical_accidents = final_dataset)
+#forecasted_accidents_monthly <- f_forecast_city_month(historical_accidents = data)
 
 # Write to CSV
-write.csv(forecasted_accidents_monthly, "forecasted_accidents_monthly", row.names = TRUE)
+write.csv(forecasted_accidents_monthly, "forecasted_accidents_monthly.csv", row.names = TRUE)
 
 
-### ADDING NON-ACCIDENT REGIONS
+### CREATE DATASET OF CITIES WITH MORE THAN 50k INHABITANTS
 ######################################################################################################
 
-forecasted_accidents_monthly <- read.csv(file = 'forecasted_accidents_monthly', 
-                                         header = TRUE,
-                                         sep = ',')
+cities <- read.csv(file = 'cities.csv',
+                   skip = 1, # skip first row
+                   header = TRUE,
+                   sep = ';')
+str(cities)
 
-f_add_nonaccident_regios <- function(forecasted_accidents, full_grid_CNT){
-  #The reason for this seperate function is that it reduces the time
-  #significantly while otherwise all rows would be looped in the forecast
-  #to predict zero accidents.
-  
-  forecasted_accidents$x <- NULL #Location is already in full_grid_CNT
-  forecasted_accidents$y <- NULL #Location is already in full_grid_CNT
-  forecasted_accidents$X <- NULL #Index is redundant
-  forecasted_accidents_allRegions <- merge(forecasted_accidents, full_grid_CNT[,-3], 
-                                           by.x='Region', by.y='Var1', all.y=TRUE)
-  
-  #Indicate zero for regions where no accidents happened: assume that if there did 
-  #not happen accidents between 2036 (week 7) and 2039 (end of the year), there will not
-  #happen any in the upcoming years.
-  forecasted_accidents_allRegions[is.na(forecasted_accidents_allRegions)] <- 0
-  
-  return(forecasted_accidents_allRegions)
-}
+if(!require('dplyr')) { install.packages('dplyr', quietly = TRUE) }; require('dplyr', quietly = TRUE)
+library(dplyr)
 
-forecasted_accidents_allRegions_monthly <- f_add_nonaccident_regios(forecasted_accidents_monthly,full_grid_CNT_monthly)
+cities$X2019 = gsub(" ", "", cities$X2019) #remove spaces to make conversion to int possible
+cities$X2019 = as.numeric(cities$X2019) #convert char to int 
 
-#columns x,y indicates latitude, longitude
-#column Region indicates number of region
+# Select cities with more than 50 000 inhabitants
+cities <- select(filter(cities, X2019 >= 50000), c(City, X2019)) 
 
-# Write to CSV
-write.csv(forecasted_accidents_allRegions_monthly, "forecasted_accidents_allRegions_monthly.csv", row.names = TRUE)
+# Split in city and state
+library(stringr)
+cities <- data.frame(City = str_split_fixed(cities$City, ", ", 2)[,1],
+                     State = str_split_fixed(cities$City, ", ", 2)[,2],
+                     Inhabitants = cities$X2019) #keep number of inhabitants for later
+
+# Remove "city" from the city names
+cities$City = str_trim(gsub("city", "", cities$City))
+# Further clean city names
+cities$City <- str_split_fixed(cities$City, "-", 2)[,1]
+cities$City <- str_split_fixed(cities$City, "/", 2)[,1]
+
+str(cities)
+
 

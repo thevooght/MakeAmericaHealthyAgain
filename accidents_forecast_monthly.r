@@ -1,40 +1,6 @@
 ### FUNCTIONS
 ######################################################################################################
 
-f_plot_counties <- function() {
-  
-  #############################################
-  ########### Plot map of counties ############
-  #############################################
-  
-  if(!require('ggplot2')) { install.packages('ggplot2', quietly = TRUE) }; require('ggplot2', quietly = TRUE)
-  if(!require('ggmap')) { install.packages('ggmap', quietly = TRUE) }; require('ggmap', quietly = TRUE)
-  if(!require('maps')) { install.packages('maps', quietly = TRUE) }; require('maps', quietly = TRUE)
-  if(!require('mapdata')) { install.packages('mapdata', quietly = TRUE) }; require('mapdata', quietly = TRUE)
-  
-  library(ggplot2)
-  library(ggmap)
-  library(maps)
-  library(mapdata)
-  
-  states <- map_data("state")
-  dim(states)
-  ggplot(data = states) + 
-    geom_polygon(aes(x = long, y = lat, fill = region, group = group), color = "white") + 
-    coord_fixed(1.3) +
-    guides(fill=FALSE)  # do this to leave off the color legend
-  
-  #Counties USA map
-  if(!require('usmap')) { install.packages('usmap', quietly = TRUE) }; require('usmap', quietly = TRUE)
-  library(usmap)
-  library(ggplot2)
-  
-  plot_usmap(regions = "counties") + 
-    labs(title = "US Counties",
-         subtitle = "This is a blank map of the counties of the United States.") + 
-    theme(panel.background = element_rect(color = "black", fill = "lightblue"))
-}
-
 f_accidents_basetable_region_month <- function(res, futac){
   
   ##############################################
@@ -94,9 +60,9 @@ f_accidents_basetable_region_month <- function(res, futac){
   grid_full_count$Var1 <- 1:nrow(grid_full_count)
   
   
-  #############################################################
-  ####### Creating table of accidents per area per week #######
-  #############################################################
+  ##############################################################
+  ####### Creating table of accidents per area per month #######
+  ##############################################################
   
   # Create list with year - month
   val <- c()
@@ -120,7 +86,7 @@ f_accidents_basetable_region_month <- function(res, futac){
   for (i in val){
     df_new <- subset(futac[,c("Start_Lat", "Start_Lng", "monthyear")], monthyear == i)
     
-    #df_new might be empty, because sometimes there were no accidents in the corresponding val (year-week)
+    #df_new might be empty, because sometimes there were no accidents in the corresponding val (year-month)
     if (nrow(df_new) != 0){
       
       df_new$area_ha <- 0.000004
@@ -150,7 +116,7 @@ f_accidents_basetable_region_month <- function(res, futac){
       grid_count[1] <- grid_count[2] <- NULL
       
       # Merge the new grid_count with the already existing grid_CNT
-      # Purpose is adding counts per region of the new week (week equal to val)
+      # Purpose is adding counts per region of the new month (month equal to val)
       grid_CNT <- merge(grid_CNT, grid_count %>% dplyr::select('Var1', 'layer'), by.x = 'Region', by.y = 'Var1', all.x=TRUE )
       names(grid_CNT)[names(grid_CNT) == "layer"] <- paste('CNT_',i)
       grid_CNT$Var1 <- NULL

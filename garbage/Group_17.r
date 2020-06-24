@@ -322,11 +322,11 @@ features_week$Date <- as.Date(features_week$Date)
 nextweekday <- function(date, wday) {   #function to get the next sunday
   date <- as.Date(date)
   diff <- wday - wday(date)
-  diff=if_else(diff<0,diff+7,diff)
+  diff = if_else(diff < 0, diff+7, diff)
   return(date + diff)
 }
-Holidays$Date <- nextweekday( Holidays$Date ,1)
-features_week$HasHoliday <- ifelse(features_week$Date %in% Holidays$Date, 1, 0 )
+Holidays$Date <- nextweekday( Holidays$Date, 1)
+features_week$HasHoliday <- ifelse(features_week$Date %in% Holidays$Date, 1, 0)
   
 #Split in train and test
 features_weekTRAIN <- features_week[features_week$Date %in% indTRAIN,]
