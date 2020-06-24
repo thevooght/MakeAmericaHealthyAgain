@@ -1,22 +1,31 @@
-#######################################################################
-##                             Preparation                           ##
-#######################################################################
-rm(list = ls())
+##########################################################################################################
+#                                      MAKE AMERICA HEALTHY AGAIN                                        #
+##########################################################################################################
+# 4. OPTIMIZATION                                                                                       #
+##########################################################################################################
+# Group 17                                                                                               #
+# Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle                        #
+##########################################################################################################
 
-# Set working directory
-#dir <- paste0(getwd(), "/data")
-dir <- "C:/! Project Prescriptive/data"
+rm(list = ls())
+#dir <- 'C:/! Project Prescriptive'
+dir <- paste0(getwd(), "/data")
 setwd(dir = dir)
 getwd()
 
-# Read in the data
+##### LOAD DATA
+##########################################################################################################
+
+# Forecasts per region
 forecasts_regions <- read.csv(file = "forecasted_accidents_allRegions_monthly.csv",
                               header = TRUE,
                               sep = ',')
+str(forecasts_regions)
 
-##########################################################################
-## Precompute the cost of deliver any accident to any possible hospital ##
-##########################################################################
+
+##### PRECOMPUTE COST TO DELIVER ANY ACCIDENT TO ANY HOSPITAL
+##########################################################################################################
+
 library(GA)
 
 # Generate Total Transport Cost Matrix
@@ -132,9 +141,8 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
 }
 
 
-##########################################################################
-##                          Cost Calculation                            ##
-##########################################################################
+##### COST CALCULATION 
+##########################################################################################################
 
 # Calculates the total cost given that we build our hospitals at the locations indicated by v_hospital_assignment
 
@@ -160,10 +168,8 @@ f_calculate_total_cost <- function(v_hospital_assignment) {
 }
 
 
-
-##########################################################################
-##                          Genetic Algorithm                           ##
-##########################################################################
+##### GENETIC ALGORITHM 
+##########################################################################################################
 
 # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
 # Note: to reduce the search space, the length of this vector is not all possible cells of the grid.
