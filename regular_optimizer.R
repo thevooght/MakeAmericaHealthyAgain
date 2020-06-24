@@ -58,19 +58,19 @@ f_find_closest_hospital <- function(row, hospitals){
 
 # Create variable in dataset indicating whether that region is eligible for a hospital or not
 fc_accidents_per_region$Eligible <- 0
-fc_accidents_per_region[order(-fc_accidents_per_region$Forecast),][1:10,]$Eligible <- 1 
+fc_accidents_per_region[order(-fc_accidents_per_region$Forecast),][1:5,]$Eligible <- 1 
   # for now, just top X regions for testing purposes 
 
 # Assign position of first hospital to Region with largest number of accidents (for now)
 hospitals <- fc_accidents_per_region[which.max(fc_accidents_per_region$Forecast),]
 
+# Extract number of inhabitants from the Region of the first hospital
+hospitals$nbr_inhabitants <- 0 # TODO
+
 # Create variable in dataset indicating whether hospital is assigned to that region or not
 fc_accidents_per_region$Hospital <- 0
 fc_accidents_per_region[which.max(fc_accidents_per_region$Forecast),]$Hospital <- 1
 nbr_hospitals_assigned <- 1
-
-# Extract number of inhabitants from the Region of the first hospital
-hospitals$nbr_inhabitants <- 0 # TODO
 
 # Delete assigned region from available_regions dataset
 # if fcast_transformed$Hospital = 1 => region is not available anymore
@@ -103,6 +103,11 @@ hospitals[nbr_hospitals_assigned,"total_distance"] <- total_distance_in_miles
 
 # Compute initial cost
 initial_cost <- f_compute_obj_function_cost(hospitals)
+
+distm(c(hospitals[1,"Longitude"], hospitals[1,"Latitude"]),
+      c(hospitals[2,"Longitude"], hospitals[2,"Latitude"]), 
+      fun = distHaversine)* 0.00062137
+sqrt((hospitals[1,"Longitude"]-hospitals[2,"Longitude"])^2+(hospitals[1,"Latitude"]-hospitals[2,"Latitude"])^2)
 
 ### While loop
 ######################################################################################################
@@ -169,6 +174,7 @@ while (new_cost < initial_cost) {
 
   # Assign optimal allocation to result
   hospitals[nbr_hospitals_assigned+1,] <- optimal_allocation
+  #print(hospitals)
   
   # Delete assigned region from available_regions dataset
   fc_accidents_per_region[fc_accidents_per_region$City %in% hospitals$City,]$Hospital <- 1

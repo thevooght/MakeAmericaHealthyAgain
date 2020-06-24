@@ -1,4 +1,37 @@
+##########################################################################################################
+#                                      MAKE AMERICA HEALTHY AGAIN                                        #
+##########################################################################################################
+# 5. OPTIMIZATION                                                                                       #
+##########################################################################################################
+# Group 17                                                                                               #
+# Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle                        #
+##########################################################################################################
+
+rm(list = ls())
+#dir <- 'C:/! Project Prescriptive'
+dir <- paste0(getwd(), "/data")
+setwd(dir = dir)
+getwd()
+
 library(GA)
+
+
+##########################################################################
+##                                LOAD DATA                             ##
+##########################################################################
+
+# Forecasts per region
+forecasts_regions <- read.csv(file = "forecasted_accidents_allRegions_monthly.csv",
+                              header = TRUE,
+                              sep = ',')
+str(forecasts_regions)
+
+# (test)
+forecasts_regions_cedric <- read.csv(file = "forecasted_accidents_wCity.csv",
+                              header = TRUE,
+                              sep = ',')
+str(forecasts_regions_cedric)
+
 
 # BASE TABLE
 # The basetable matrix for this optimization must look like this.
@@ -16,16 +49,23 @@ library(GA)
 #     -128   |      48.9   |         TRUE             |   59500        |     1523           |   TRUE            |     50 000 000      |      50 000 000     |  1 000 000       |  101 000 000 #     
 ###############################################################################################################################################################################################
 
-# Helper function: convert grid to one that matches.
-## Aggregrates all the weekly CNT_'s to total_accidents
+
+## Aggregrates all the monthly accidents to a total.
 f_create_aggregate_accidents_to_total <- function(df_grid) {
   v_columns_all = colnames(df_grid)
-  v_columns_CNT = grep("CNT_", v_columns_all, value = TRUE)
+  v_columns_CNT = grep("X20", v_columns_all, value = TRUE)
   df_grid$total_accidents <- rowSums(df_grid[, v_columns_CNT])
+  df_grid <- df_grid[, -which(names(df_grid) %in% v_columns_CNT)]
+  # Exclude regions with no accidents (we assume these regions are no good to place a hospital)
+  df_grid <- df_grid[df_grid$total_accidents > 0,]
+  # Replace negative forecasts by zero (ONLY needed if we don't execute the previous statement)
+  #df_grid$total_accidents[df_grid$total_accidents < 0] <- 0
+  # Reset index
+  rownames(df_grid) <- NULL
   return(df_grid)
 }
 
-grid_CNT <- f_create_aggregate_accidents_to_total(grid_CNT)
+grid_CNT <- f_create_aggregate_accidents_to_total(forecasts_regions)
 
 # TODO: FAKE ASS ELIGIBLE SHIT AND CITIZNS!
 grid_CNT$eligible_hospital = FALSE
@@ -33,8 +73,9 @@ grid_CNT[grid_CNT$X < 700,]$eligible_hospital = TRUE
 grid_CNT$inhabitants = 100
 grid_CNT[grid_CNT$X < 700,]$inhabitants = 50000
 
+
 ##########################################################################
-#  Verify whether a given dataframe grid can run through the optimizer   #
+##  Verify whether a given dataframe grid can run through the optimizer ##
 ##########################################################################
 f_verify_valid_table_for_optimization <- function(df_grid) {
   if(!inherits(data.frame(), "data.frame")) {
@@ -69,9 +110,8 @@ f_verify_valid_table_for_optimization <- function(df_grid) {
 
 
 ##########################################################################
-# Precompute the cost of deliver any accident to any possible hospital   #
+## Precompute the cost of deliver any accident to any possible hospital ##
 ##########################################################################
-
 
 # Generate Total Transport Cost Matrix
 # rows = hospital cells, columns = all accident cells.
@@ -79,13 +119,13 @@ f_verify_valid_table_for_optimization <- function(df_grid) {
 f_generate_matrix_transport_cost <- function(df_grid) {
   ## Make local matrix of the x,y coords of the grid
   m_grid <- cbind(df_grid$x, df_grid$y)
-  
+
   ## Calculate distance grid
-  ## BUG: this uses the eucledian distance, and isn't actually accurate with the curverature of earth
+  ## BUG: this uses the euclidian distance, and isn't actually accurate with the curverature of earth
   ## but then again, for a radius of 100 miles this likely doesn't matter.
   ## A better but very computationally expensive "improvement" would be to use haversin.
   m_distances_between_all_regions <- as.matrix(dist(m_grid, diag = TRUE, upper = TRUE))
-  
+
   ## Reduce it to a matrix to only contains the distances to hospitals
   cells_in_grid_capable_of_hospital = as.integer(rownames(df_grid[df_grid$eligible_hospital == TRUE,]))
   # This is a horrible constant that approximates the radian distance to kilometers
@@ -95,7 +135,7 @@ f_generate_matrix_transport_cost <- function(df_grid) {
   cte_radian_to_kilometers_coeff = 110
   m_costs_transport <- (cte_cost_per_kilometer * cte_radian_to_kilometers_coeff) * m_distances_between_all_regions[c(cells_in_grid_capable_of_hospital),]
   distances_between_all_regions <- NULL
-  
+
   # Return the cost matrix per accident of size h x c, 
   # where h is the amount of cells that can house a hospital, and c is the total amount of cells in the grid.
   return(m_costs_transport)
@@ -109,9 +149,10 @@ f_calculate_total_transport_cost_per_hospital <- function(m_transport, m_assignm
     stop("Assignment matrix and transport matrix must be of equal length!")
   } 
   
-  if (!identical(as.vector(m_assignment),as.numeric(as.logical(m_assignment)))) {
+  if (!identical(as.vector(m_assignment), as.numeric(as.logical(m_assignment)))) {
     stop("Assignment matrix must only contain binary values!")
   }
+  
   # Applies the m_assignment as a "mask" to the transport matrix
   # Which means only the transport costs of an accident cell to the assigned hospital cell are retrieved.
   # If a cell i is not assigned to hospital j, it receives a cost of 0.
@@ -123,9 +164,11 @@ f_calculate_total_transport_cost_per_hospital <- function(m_transport, m_assignm
 
 f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_accident) {
   # Build a mask, of all enabled hospitals for each accident.
-  # If a cell of a grid is not selected to build a hospital at
+  # If a cell of a grid is not selected to build a hospital at,
   # it will be taken out of the possible places to go to.
-  m_assignment_mask <- matrix( v_hospital_assignment, length(v_hospital_assignment) , ncol(m_transport_cost_per_accident))
+  m_assignment_mask <- matrix(data = v_hospital_assignment, 
+                              nrow = length(v_hospital_assignment), 
+                              ncol = ncol(m_transport_cost_per_accident))
   
   # To eliminate non-existing hospitals from being assigned, set a insane large price to get there.
   m_transport_cost_per_accident[as.logical(m_assignment_mask)==0] = 10000000
@@ -133,8 +176,8 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
   assigner <- function(v_accident_column) {
     # Empty assignment
     v_assignment = rep(0, length(v_accident_column))
-    # Find location i where the hospital cost is minimum, select the first hospital we find available.
-    # In case multiple hospitals have the same cost.
+    # Find location i where the hospital cost is minimum.
+    # Select the first hospital we find available (in case multiple hospitals have the same cost).
     minimum <- c(min(v_accident_column))
     location_i <- which(v_accident_column == minimum, arr.ind = TRUE)
     # For this accident column, assign it to location i
@@ -142,11 +185,11 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
     return(v_assignment)
   }
   
-  m_assignement <- apply(m_transport_cost_per_accident, 2, assigner)
+  m_assignment <- apply(m_transport_cost_per_accident, 2, assigner)
   
   # Re-apply the mask to be sure that the insane cost wasn't selected
-  m_assignement[as.logical(m_assignment_mask)==0] = 0
-  return(m_assignement)
+  m_assignment[as.logical(m_assignment_mask)==0] = 0
+  return(m_assignment)
 }
 
 
@@ -225,7 +268,6 @@ f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_
   v_inhabitants_per_hospital <<- df_grid[df_grid$eligible_hospital == TRUE,]$inhabitants
 }
 
-
 ##########################################################################
 ##                          Genetic Algorithm                           ##
 ##########################################################################
@@ -242,8 +284,14 @@ f_ga_optimize <- function(df_grid, investment_cost_per_hospital, operational_cos
   
   count_of_eligible_hospitals = sum(df_grid$eligible_hospital)
   print("[*] Running Genetic Algorithm on the grid")
-  GA <- ga("binary", fitness = f_fitness, maxiter = 100, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
+  GA <- ga("binary", fitness = f_fitness, maxiter = 10, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
+  
+  # Inspect solution
+  plot(GA)
   summary(GA)
+  
+  # Extract solution
+  print(paste0("sum of solution", sum(summary(GA)$solution)))
   return(GA)
 }
 
@@ -268,3 +316,4 @@ f_build_optimal_grid <- function(v_optimal_hospital_assignment, df_grid) {
 }
 
 #grid_CNT <- f_add_optimal_solution_to_grid(,df_grid)
+
