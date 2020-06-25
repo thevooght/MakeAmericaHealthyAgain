@@ -134,7 +134,6 @@ f_generate_matrix_transport_cost <- function(df_grid) {
   cte_cost_per_kilometer = (cte_transport_cost_per_mile / 1.609344)
   cte_radian_to_kilometers_coeff = 110
   m_costs_transport <- (cte_cost_per_kilometer * cte_radian_to_kilometers_coeff) * m_distances_between_all_regions[c(cells_in_grid_capable_of_hospital),]
-  distances_between_all_regions <- NULL
 
   # Return the cost matrix per accident of size h x c, 
   # where h is the amount of cells that can house a hospital, and c is the total amount of cells in the grid.
@@ -274,7 +273,7 @@ f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_
 ##########################################################################
 
 f_ga_optimize <- function(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
-  #f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile)
+  f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile)
   
   # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
   # Note: to reduce the search space, the length of this vector is only cells with eligible_hospital == TRUE.
