@@ -1,15 +1,15 @@
 ##########################################################################################################
 #                                      MAKE AMERICA HEALTHY AGAIN                                        #
 ##########################################################################################################
-# 5. OPTIMIZATION                                                                                       #
+# 5. OPTIMIZATION                                                                                        #
 ##########################################################################################################
 # Group 17                                                                                               #
 # Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle                        #
 ##########################################################################################################
 
 rm(list = ls())
-#dir <- 'C:/! Project Prescriptive'
-dir <- paste0(getwd(), "/data")
+dir <- 'C:/! Project Prescriptive'
+dir <- paste0(dir, "/data")
 setwd(dir = dir)
 getwd()
 
@@ -26,11 +26,11 @@ forecasts_regions <- read.csv(file = "forecasted_accidents_allRegions_monthly.cs
                               sep = ',')
 str(forecasts_regions)
 
-# (test)
-forecasts_regions_cedric <- read.csv(file = "forecasted_accidents_wCity.csv",
+# City information per region
+region_information <- read.csv(file = "forecasted_accidents_wCity.csv",
                               header = TRUE,
                               sep = ',')
-str(forecasts_regions_cedric)
+str(region_information)
 
 
 # BASE TABLE
@@ -67,12 +67,32 @@ f_create_aggregate_accidents_to_total <- function(df_grid) {
 
 grid_CNT <- f_create_aggregate_accidents_to_total(forecasts_regions)
 
-# TODO: FAKE ASS ELIGIBLE SHIT AND CITIZNS!
-grid_CNT$eligible_hospital = FALSE
-grid_CNT[grid_CNT$X < 700,]$eligible_hospital = TRUE
-grid_CNT$inhabitants = 100
-grid_CNT[grid_CNT$X < 700,]$inhabitants = 50000
+## Create basetable matrix
+f_create_basetable_matrix <- function(grid_CNT, region_info){
+  region_info <- region_info[,c("Region","City","State","nbr_inhabitants","inCity")]
+  base <- merge(x = grid_CNT, y = region_info, by = "Region", all.x = TRUE)
+  # Some dirty cleaning
+  base$X <- NULL
+  base$inhabitants <- base$nbr_inhabitants
+  base$nbr_inhabitants <- NULL
+  # Add label indicating whether region is a suitable place to build a hospital
+  base$eligible_hospital <- FALSE
+  base[is.na(base)] <- 0
+  base[base$inCity == 1,]$eligible_hospital <- TRUE
+  # Select needed variables
+  base <- base[,c("x","y","eligible_hospital","inhabitants","total_accidents")]
+  return(base)
+}
 
+grid_CNT <- f_create_basetable_matrix(grid_CNT, region_information)
+
+# For testing purposes
+#grid_CNT <- grid_CNT[1:5000,]
+
+# Inspect basetable matrix
+str(grid_CNT)
+summary(grid_CNT)
+# There are ...  eligible places to build a hospital
 
 ##########################################################################
 ##  Verify whether a given dataframe grid can run through the optimizer ##
@@ -216,7 +236,7 @@ f_calculate_individual_cost <- function(v_hospital_assignment) {
   individual_transport_cost = f_calculate_total_transport_cost_per_hospital(m_total_transport_cost_for_all_accidents, m_assignment)
 
   # Bind all the vectors together into a matrix, 
-  # each row represent a hospital, 
+  # each row represents a hospital, 
   # first col = investment cost
   # second col = operational cost
   # third col = transport cost
@@ -301,9 +321,10 @@ f_check_solution <- function(v_hospital_assignment, df_grid, investment_cost_per
   cost_result <- f_calculate_total_cost(v_hospital_assignment)
   return(cost_result)
 }
-# f_check_solution(rep(1, 699), grid_CNT, 50000000,5000 * 20,10)
+# f_check_solution(rep(1, 699), grid_CNT, 50000000, 5000 * 20, 10)
 
-f_ga_optimize(grid_CNT, 50000000,5000 * 20,10)
+f_ga_optimize(grid_CNT, 50000000, 5000 * 20, 10)
+
 
 ##########################################################################
 ##                            Post Processing                           ##
