@@ -345,80 +345,120 @@ print(ensemble_month_acc)
 
 ### Conclusion
 # Naive & tbats has a much higher training error than test error => counter intuitive and therefore not trustworthy
+# We will exclude them from further consideration
 # (We probably should have more data)
-# The results from the neural network model make more sense and are better than the other methods so this is chosen
+# When looking at the MAPE, we notice monthly data performs better
+## 1) each  technique has a higher MAPE when performed on weekly data, compared to the same technique on monthly data 
+## 2) overall, the 4 lowest MAPE's are achieved by techniques on monthly data
 
+#When including RMSE and MAE for monthly data, we notice two good candidates: the ensemble, and neural net w/o features
+#neural net: lower RMSE and MAE
+#ensemble: lower MAPE
+#We've chosen to continue with the neural net, as this lowers the runtime of our forecast.
 ##### Producing graphs for slides
 
-# naive and tbats
-graph <- rbind(naive_week_acc, naive_month_acc, tbats_month_acc, tbats_week_acc)
-barplot(naive_month_acc[,-3], beside=TRUE, col=c('dark blue','white'), legend.text=TRUE, main='Naive Bayes for monthly data')
-barplot(naive_week_acc[,-3], beside=TRUE, col=c('dark blue','white'), main='Naive Bayes for weekly data ')
-barplot(naive_month_acc[,3], beside=TRUE, col=c('dark blue','white'), space=0, main='Naive Bayes MAPE for monthly data')
-barplot(naive_week_acc[,3], beside=TRUE, col=c('dark blue','white'), space=0, main='Naive Bayes MAPE for weekly data')
-barplot(tbats_month_acc[,3], beside=TRUE, col=c('dark blue','white'), space=0,main='TBATS MAPE for monthly data')
-barplot(tbats_week_acc[,3], beside=TRUE, col=c('dark blue','white'), space= 0, main='TBATS MAPE for weekly data')
+#Compare the training and test error for Naive and TBATS
+graph <- rbind(naive_week_acc, naive_month_acc,tbats_month_acc,tbats_week_acc)
+#naive and tbats
+barplot(naive_month_acc[,-3], beside = TRUE,  col=c('dark blue', 'white'),legend.text = TRUE, main='Naive Bayes for monthly data')
+barplot(naive_week_acc[,-3], beside = TRUE, col=c('dark blue', 'white'), main='Naive Bayes for weekly data ')
+barplot(naive_month_acc[,3], beside = TRUE,  col=c('dark blue', 'white'),space = 0, main='Naive Bayes MAPE for monthly data')
+barplot(naive_week_acc[,3], beside = TRUE, col=c('dark blue', 'white'), space = 0, main='Naive Bayes MAPE for weekly data')
+barplot(tbats_month_acc[,3], beside = TRUE, col=c('dark blue', 'white'), space = 0,main='TBATS MAPE for monthly data')
+barplot(tbats_week_acc[,3], beside = TRUE, col=c('dark blue', 'white'), space= 0, main='TBATS MAPE for weekly data')
 
-# MAPE to compare weekly and monhly data
+#MAPE to compare weekly and monhly data
 graph <- data.frame( 'MAPE' = rbind(ets_week_acc[2,3], ets_month_acc[2,3], arima_week_acc[2,3], arima_month_acc[2,3],
                                     arima_exog_week_acc[2,3] ,arima_exog_month_acc[2,3], nnetar_week_acc[2,3],nnetar_month_acc[2,3], 
                                     nnetar_exog_week_acc[2,3] ,nnetar_exog_month_acc[2,3], stl_week_acc[2,3], stl_month_acc[2,3], 
                                     stl_rw_week_acc[2,3], stl_rw_month_acc[2,3], ensemble_week_acc[3], ensemble_month_acc[3]),
-                     'name' = c('ets_week', 'ets_month', 'arima_week', 'arima_month','arima_exog_week', 'arima_exog_month', 'nnetar_week',
-                                'nnetar_month', 'nnetar_exog_week','nnetar_exog_month', 'stl_week', 'stl_month', 
-                                'stl+rw_week', 'stl+rw_month','ensemble_week', 'ensemble_month'))
+                     'name' = c('weekly ETS', 'monthly ETS', 'weekly ARIMA 
+                                w/o features', 'monthly ARIMA 
+                                w/o features','weekly ARIMA 
+                                with features', 'monthly ARIMA
+                                with features', 'weekly neural net
+                                w/o features','monthly neural net
+                                w/o features', 'weekly neural net
+                                with features','monthly neural net
+                                with features', 'weekly STL', 'monthly STL', 
+                                'weekly STL & random walk', 'monthly STL & random walk',
+                                'weekly ensemble', 'monthly ensemble'))
+graph$Value <- ifelse(grepl('weekly',graph$name,fixed = TRUE),'Weekly', 'Monthly') 
 library("ggplot2")
 library('tidyverse')
 library(forcats)
-
-graph %>%
-  mutate(name = fct_reorder(name, MAPE)) %>%
+p <- graph %>%
+  mutate(name = fct_reorder(name,-MAPE)) %>%
   ggplot(aes(x= name, y = MAPE ))+
-  geom_bar(stat = 'identity',aes(fill = MAPE))+ 
-  theme(axis.text.x = element_text(angle = 30))+
+  geom_bar(stat = 'identity',aes(fill = Value, group = Value))+ 
   labs(title = 'MAPE', y='',x='')+ 
-  theme(axis.ticks = element_blank())+
-  scale_fill_gradient2(low='white', mid='deepskyblue1', high='navyblue')+ 
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-        panel.background = element_blank(), axis.line.y  = element_line(colour = "black"))
-
-# RMSE monthly
+  scale_fill_manual("Legend", values = c("Monthly" = "navyblue", "Weekly" = "forestgreen"))+
+  theme(panel.background = element_rect(fill = "transparent"), 
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        legend.background = element_rect(fill = "transparent"), 
+        legend.box.background = element_rect(fill = "transparent"),
+        axis.line.y  = element_line(colour = "black"),
+        axis.ticks = element_blank(),
+        text = element_text(size=10))+
+  coord_flip()
+ggsave(p, filename = "MAPE.png",  bg = "transparent")
+#RMSE monthly
 graph <- data.frame( 'RMSE' = rbind(ets_month_acc[2,1], arima_month_acc[2,1],
                                     arima_exog_month_acc[2,1], nnetar_exog_month_acc[2,1],
                                     nnetar_month_acc[2,1], stl_month_acc[2,1],
                                     stl_rw_month_acc[2,1], ensemble_month_acc[1]),
-                     'name' = c('ets', 'arima w/o features','arima w/ features',
-                                'nnetar w/ features' ,'nnetar w/o features',
-                                'stl', 'stl+rw',
+                     'name' = c('ETS', 'ARIMA without features','ARIMA with features',
+                                'neural net 
+                                with features' ,'neural net 
+                                without features',
+                                'STL', 'STL & random walk',
                                 'ensemble'))
-graph %>%
-  mutate(name = fct_reorder(name, RMSE)) %>%
+
+p <- graph %>%
+  mutate(name = fct_reorder(name,-RMSE)) %>%
   ggplot(aes(x= name, y = RMSE ))+
   geom_bar(stat = 'identity',aes(fill = RMSE))+ 
-  theme(axis.text.x = element_text(angle = 20))+
   labs(title = 'RMSE', y='',x='')+ 
-  theme(axis.ticks = element_blank(),text = element_text(size=15))+
   scale_fill_gradient2(low='white', mid='deepskyblue1', high='navyblue')+ 
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line.y  = element_line(colour = "black"))
-
-# MAE monthly
+  theme(panel.background = element_rect(fill = "transparent"), 
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        legend.background = element_rect(fill = "transparent"), 
+        legend.box.background = element_rect(fill = "transparent"),
+        axis.line.y  = element_line(colour = "black"),
+        axis.ticks = element_blank(),
+        text = element_text(size=15))+
+  coord_flip()
+ggsave(p, filename = "RMSE.png",  bg = "transparent")
+#MAE monthly
 graph <- data.frame( 'MAE' = rbind(ets_month_acc[2,2], arima_month_acc[2,2],
                                    arima_exog_month_acc[2,1], nnetar_exog_month_acc[2,1],
                                    nnetar_month_acc[2,2],stl_month_acc[2,2],
                                    stl_rw_month_acc[2,2], ensemble_month_acc[2]),
-                     'name' = c('ets', 'arima w/o features','arima w/ features',
-                                'nnetar w/ features' ,'nnetar w/o features',
-                                'stl', 'stl+rw',
+                     'name' = c('ETS', 'ARIMA without features','ARIMA with features',
+                                'neural net 
+                                with features' ,'neural net 
+                                without features',
+                                'STL', 'STL & random walk',
                                 'ensemble'))
 
-graph %>%
-  mutate(name = fct_reorder(name, MAE)) %>%
+p <- graph %>%
+  mutate(name = fct_reorder(name,- MAE)) %>%
   ggplot(aes(x= name, y = MAE ))+
   geom_bar(stat = 'identity',aes(fill = MAE))+ 
-  theme(axis.text.x = element_text(angle = 20))+
   labs(title = 'MAE', y='',x='')+ 
-  theme(axis.ticks = element_blank(),text = element_text(size=15))+
   scale_fill_gradient2(low='white', mid='deepskyblue1', high='navyblue')+ 
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line.y  = element_line(colour = "black"))                                                  
+  theme(panel.background = element_rect(fill = "transparent"), 
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        legend.background = element_rect(fill = "transparent"), 
+        legend.box.background = element_rect(fill = "transparent"),
+        axis.line.y  = element_line(colour = "black"),
+        axis.ticks = element_blank(),
+        text = element_text(size=15))+
+  coord_flip()
+ggsave(p, filename = "MAE.png",  bg = "transparent")
