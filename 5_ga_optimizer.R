@@ -94,6 +94,34 @@ str(grid_CNT)
 summary(grid_CNT)
 # There are ...  eligible places to build a hospital
 
+
+##########################################################################
+##                    Create an initial assignment                      ##
+##########################################################################
+f_create_initial_assignment <- function(region_info){
+  region_info[is.na(region_info)] <- 0 # for now, until cedric's code is fixed
+  region_info <- region_info[region_info$inCity == 1, c("Region","City","State","inCity")]
+  region_info <- region_info[order(region_info$State,region_info$City),]
+  region_info$assignment <- 0
+  # Build exactly one hospital in every big city (> 50k inhabitants)
+  for (i in 1:(nrow(test)-1)){
+    if (i == 1){
+      region_info[i,]$assignment <- 1
+    }
+    else if (( test[i-1,c("City")] != test[i,c("City")] )){ 
+      region_info[i,]$assignment <- 1
+    } 
+    else {
+      region_info[i,]$assignment <- 0
+    }
+  }
+  v_initial_assignment <- region_info$assignment
+  return(v_initial_assignment)
+}
+
+v_initial_assignment <- f_create_initial_assignment(region_information)
+sum(v_initial_assignment)
+
 ##########################################################################
 ##  Verify whether a given dataframe grid can run through the optimizer ##
 ##########################################################################
