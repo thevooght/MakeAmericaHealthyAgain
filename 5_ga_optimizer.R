@@ -8,7 +8,7 @@
 ##########################################################################################################
 
 rm(list = ls())
-dir <- 'C:/! Project Prescriptive'
+dir <- getwd()
 dir <- paste0(dir, "/data")
 setwd(dir = dir)
 getwd()
@@ -199,6 +199,13 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
     # Find location i where the hospital cost is minimum.
     # Select the first hospital we find available (in case multiple hospitals have the same cost).
     minimum <- c(min(v_accident_column))
+    
+    # If the transport cost is higher than the cutoff transport cost, no hospital will go there.
+    # Returns empty assignment vector
+    if (minimum > cte_cutoff_transport_cost) {
+      return(v_assignment)
+    }
+    
     location_i <- which(v_accident_column == minimum, arr.ind = TRUE)
     # For this accident column, assign it to location i
     v_assignment[location_i[1]] = 1
@@ -212,6 +219,15 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
   return(m_assignment)
 }
 
+f_get_coverage <- function(m_assignment) {
+  # Get all accidents cells that have no hospital cell assigned to them
+  v_unassignment <- as.numeric(colSums(m_assignment) == 0)
+  # Given all accident cells, sum the actual accident count that is within an accident cell
+  total_unassigned_accidents <- sum(v_total_accidents[v_unassignment==1])
+  # Return amount of unassigned accidents
+  return(total_unassigned_accidents)
+}
+
 
 ##########################################################################
 ##                          Cost Calculation                            ##
@@ -222,7 +238,14 @@ f_optimal_assignment <- function(v_hospital_assignment, m_transport_cost_per_acc
 # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
 # Note: to reduce the search space, the length of this vector is not all possible cells of the grid.
 # But only the cells where a hospital can be built upon (rows where grid_CNT$eligible_hospital == TRUE)
-f_calculate_individual_cost <- function(v_hospital_assignment) {
+f_calculate_individual_cost <- function(v_hospital_assignment, m_assignment) {
+  
+  # If the optimal assignment matrix isn't given, calculate it here.
+  if (is.null(m_assignment)) {
+    ## Optimize the assignment of accidents to hospitals
+    m_assignment <- f_optimal_assignment(v_hospital_assignment, m_transport_cost_to_hospital_per_accident)
+  }
+  
   # Total amount of hospitals assigned
   individual_investment_cost = cte_investment_cost_per_hospital * v_hospital_assignment
   
@@ -230,8 +253,6 @@ f_calculate_individual_cost <- function(v_hospital_assignment) {
   individual_operational_cost <- cte_operational_cost_per_hospital * (v_hospital_assignment * v_inhabitants_per_hospital) 
   
   # Total transport cost
-  ## Optimize the assignment of accidents to hospitals
-  m_assignment <- f_optimal_assignment(v_hospital_assignment, m_transport_cost_to_hospital_per_accident)
   ## Use the optimal assignment as a mask on the total transport cost matrix to only get the transport costs that occur.
   individual_transport_cost = f_calculate_total_transport_cost_per_hospital(m_total_transport_cost_for_all_accidents, m_assignment)
 
@@ -248,9 +269,11 @@ f_calculate_individual_cost <- function(v_hospital_assignment) {
 
 # Aggregates the individual cost calculations into a total.
 f_calculate_total_cost <- function(v_hospital_assignment) {
-  # Given a vector of decisions variables (v_hospital_assignment)
+  # Optimize the assignment of accidents to hospitals
+  m_assignment <- f_optimal_assignment(v_hospital_assignment, m_transport_cost_to_hospital_per_accident)
+  
   # Calculate the individual cost matrix
-  m_hospital_costs <- f_calculate_individual_cost(v_hospital_assignment)
+  m_hospital_costs <- f_calculate_individual_cost(v_hospital_assignment, m_assignment)
   # Fourth column is the total cost
   total_cost = -sum(m_hospital_costs[,4])
   # Turn the sum negative!
@@ -262,7 +285,7 @@ f_calculate_total_cost <- function(v_hospital_assignment) {
 ##                          Setup Global Environment                    ##
 ##########################################################################
 # The setup function that precomputes constant matrices and sets constant values.
-f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
+f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage) {
   # Verify that the basetable is actually suited for optimization.
   print("[*] Verifying validity of basetable/grid for optimization")
   f_verify_valid_table_for_optimization(df_grid)
@@ -286,44 +309,82 @@ f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_
   
   print("[*] Storing inhabitants vector of eligible hospitals into global context")
   v_inhabitants_per_hospital <<- df_grid[df_grid$eligible_hospital == TRUE,]$inhabitants
+  
+  print("[*] Storing total accidents vector of eligible hospitals into global context")
+  v_total_accidents <<- df_grid$total_accidents
+  
+  print("[*] Storing accident constraints for hospitals into global context")
+  v_total_accidents <<- df_grid$total_accidents
+  cte_sum_total_accidents <<- sum(v_total_accidents)
+  cte_min_accidents_to_cover <<-  (1 - min_accident_coverage) * sum(df_grid$total_accidents)
+  cte_penalty <<- sqrt(.Machine$double.xmax)
+  cte_cutoff_transport_cost <<- transport_cost_per_mile * 100
 }
 
 ##########################################################################
 ##                          Genetic Algorithm                           ##
 ##########################################################################
 
-f_ga_optimize <- function(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
-  f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile)
+f_ga_optimize <- function(df_grid, m_begin_solution, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage) {
+  #f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage)
   
   # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
   # Note: to reduce the search space, the length of this vector is only cells with eligible_hospital == TRUE.
   f_fitness <- function(v_hospital_assignment) {
-    return(f_calculate_total_cost(v_hospital_assignment))
+    total_cost = 0
     
+    # Optimize the assignment of accidents to hospitals
+    m_assignment <- f_optimal_assignment(v_hospital_assignment, m_transport_cost_to_hospital_per_accident)
+    
+    # Verify whether the assignment matrix actually matches our constraints (98% coverage)
+    coverage <- f_get_coverage(m_assignment)
+    coverage_percentage <- coverage / cte_sum_total_accidents
+    if (coverage < cte_min_accidents_to_cover) {
+      # Very harsh penalty (1.797693e+308)
+      return(-(cte_penalty + ((1 - coverage_percentage) * cte_penalty)))
+    }
+    
+    # Calculate the individual cost matrix
+    m_hospital_costs <- f_calculate_individual_cost(v_hospital_assignment, m_assignment)
+    # Fourth column is the total cost
+    total_cost = -sum(m_hospital_costs[,4])
+    # Turn the sum negative!
+    return(total_cost)
   }
   
   count_of_eligible_hospitals = sum(df_grid$eligible_hospital)
   print("[*] Running Genetic Algorithm on the grid")
-  GA <- ga("binary", fitness = f_fitness, maxiter = 10, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
+  GA <- ga("binary", fitness = f_fitness, maxiter = 500, suggestions = m_begin_solution, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
   
   # Inspect solution
   plot(GA)
   summary(GA)
   
   # Extract solution
-  print(paste0("sum of solution", sum(summary(GA)$solution)))
+  #print(paste0("sum of solution", sum(summary(GA)$solution)))
   return(GA)
 }
 
 # Helper function that returns the cost for a given solution.
-f_check_solution <- function(v_hospital_assignment, df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile) {
-  f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile)
+f_check_solution <- function(v_hospital_assignment) {
   cost_result <- f_calculate_total_cost(v_hospital_assignment)
   return(cost_result)
 }
-# f_check_solution(rep(1, 699), grid_CNT, 50000000, 5000 * 20, 10)
 
-f_ga_optimize(grid_CNT, 50000000, 5000 * 20, 10)
+# Helper function that creates the final dataframe
+f_build_final_basetable <- function(df_grid, v_hospital_assignment_solution) {
+  df_grid$build_hospital = FALSE
+  df_grid[df_grid$eligible_hospital==1,]$build_hospital = as.logical(v_hospital_assignment_solution)
+  
+
+  
+  return(df_grid)
+}
+
+#f_check_solution(rep(1, 1488), grid_CNT, 50000000, 5000 * 20, 10)
+f_setup(grid_CNT, 50000000, 5000 * 20, 10, 0.98)
+m_begin_solution <- matrix(c(v_begin_solution, v_begin_solution_two, v_begin_solution_three), ncol=1488, byrow=TRUE)
+GA_with_begin <- f_ga_optimize(grid_CNT, m_begin_solution, 50000000, 5000 * 20, 10, 0.98)
 
 
 ##########################################################################
@@ -333,8 +394,35 @@ f_ga_optimize(grid_CNT, 50000000, 5000 * 20, 10)
 f_build_optimal_grid <- function(v_optimal_hospital_assignment, df_grid) {
   df_grid$build_hospital = FALSE
   df_grid[df_grid$eligible_hospital == TRUE,]$build_hospital = as.logical(v_optimal_hospital_assignment)
+  
+  # Optimize the assignment of accidents to hospitals
+  m_assignment <- f_optimal_assignment(v_optimal_hospital_assignment, m_transport_cost_to_hospital_per_accident)
+  
+  # Get  cost matrix
+  m_costs <- f_calculate_individual_cost(v_optimal_hospital_assignment, m_assignment)
+  
+  print(nrow(m_costs))
+  
+  # Investment cost.
+  df_grid$investment_cost = 0
+  df_grid[df_grid$eligible_hospital == TRUE,]$investment_cost = m_costs[,1]
+
+  # Operational cost
+  df_grid$operational_cost = 0
+  df_grid[df_grid$eligible_hospital == TRUE,]$operational_cost = m_costs[,2]
+
+  # Transport cost
+  df_grid$transport_cost = 0
+  df_grid[df_grid$eligible_hospital == TRUE,]$transport_cost = m_costs[,3]
+
+  # Total cost
+  df_grid$total_cost = 0
+  df_grid[df_grid$eligible_hospital == TRUE,]$total_cost = m_costs[,4]
+    
   return(df_grid)
 }
+
+optimal_grid_CNT <- f_build_optimal_grid(c(summary(GA)$solution), grid_CNT)
 
 #grid_CNT <- f_add_optimal_solution_to_grid(,df_grid)
 
