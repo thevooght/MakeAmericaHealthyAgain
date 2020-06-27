@@ -6,7 +6,7 @@ library(dplyr)
 
 # Leaflet bindings are a bit slow; for now we'll just sample to compensate
 set.seed(100)
-accidentSampled <- accidents[sample.int(nrow(accidents), 10000),]
+#accidentSampled <- accidents[sample.int(nrow(accidents), 10000),]
 
 
 function(input, output, session) {
@@ -43,7 +43,11 @@ function(input, output, session) {
   
   # Show a popup at the given location
   showHospitalPopup <- function(hospital, lat, lng) {
-    selectedHospital <- hospitals[hospitals$X == hospital,]
+    selectedHospital <- optimal_grid_CNT[optimal_grid_CNT$x == lng & optimal_grid_CNT$y == lat,]
+    print(selectedHospital)
+    optimal_grid_CNT[optimal_grid_CNT$x == lng & optimal_grid_CNT$y == lat,]$build_hospital <- FALSE
+    optimal_grid_CNT <<- optimal_grid_CNT
+    print(sum(optimal_grid_CNT$build_hospital))
     addHospitalRadius(lat, lng)
     content <- as.character(tagList(
       tags$h4("ID: 1"),
