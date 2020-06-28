@@ -84,8 +84,6 @@ f_mostFrequentCity_perBox <- function(forecasted_accidents, futac, res=0.15){
   #integer0 value
   is.integer0 <- function(x){is.integer(x) && length(x) == 0L}
   
-  #futac_test <- head(futac, n=5000)
-  #futac_test <- tail(futac, n=5000)
   futac$Region <- 0
   for(i in 1:nrow(futac)){
     # Keep track of progress
@@ -210,8 +208,8 @@ f_retrieveCity <- function(city_per_region, forecasted_accidents, cities_50k, ab
 ##########################################################################################################
 
 # Calculate most frequent city and state per region
-futac_test <- head(futac, n=10000)
-futac_test <- tail(futac, n=10000)
+#futac_test <- head(futac, n=10000)
+#futac_test <- tail(futac, n=10000)
 city_per_region <- f_mostFrequentCity_perBox(forecasted_accidents, futac)
 
 # Write to CSV
