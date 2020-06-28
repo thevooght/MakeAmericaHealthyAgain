@@ -108,7 +108,7 @@ f_create_features <- function(data){
   library(imputeMissings)
   cols_to_impute <- c("Temperature.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.")
   train_features[cols_to_impute] <- imputeMissings::impute(train_features[cols_to_impute])
-  test_features[cols_to_impute] <- imputeMissings::impute(test_features[cols_to_impute])
+  test_features[cols_to_impute] <- imputeMissings::impute(train_features[cols_to_impute])
   # numeric/integer vectors are imputed with the median
   
   ## Prepare training set
