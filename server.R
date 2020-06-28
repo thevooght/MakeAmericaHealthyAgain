@@ -25,7 +25,7 @@ function(input, output, session) {
 
   #################### ACCIDENTS ########################
   
-  leafletProxy("map", data = grid_CNT[grid_CNT$total_accidents>0,]) %>%
+  leafletProxy("map", data = optimal_grid_CNT[optimal_grid_CNT$total_accidents>0,]) %>%
       clearShapes() %>%
       addCircles(~x, ~y, radius=10, layerId=~x,
         stroke=FALSE, fillOpacity=0.4, fillColor="#ED2939")
@@ -42,7 +42,7 @@ function(input, output, session) {
     iconAnchorX = 19, iconAnchorY = 19)
 
   # Load all the hospitals to the map
-  leafletProxy("map", data = grid_CNT[optimal_grid_CNT$build_hospital==1,]) %>%
+  leafletProxy("map", data = optimal_grid_CNT[optimal_grid_CNT$build_hospital==1,]) %>%
     addMarkers(~x, ~y, icon = hospitalIcon)
   
   # Show a popup at the given location
