@@ -11,7 +11,7 @@ vars <- c(
 
 navbarPage("Make America Healthy Again", id="nav",
 
-  tabPanel("Map previous accidents",
+  tabPanel("Hospital explorer",
     div(class="outer",
 
       tags$head(
@@ -21,23 +21,7 @@ navbarPage("Make America Healthy Again", id="nav",
       ),
 
       # If not using custom CSS, set height of leafletOutput to a number instead of percent
-      leafletOutput("map", width="100%", height="100%"),
-
-      # Shiny versions prior to 0.11 should use class = "modal" instead.
-      absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
-        draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
-        width = 330, height = "auto",
-
-        h2("Hospital Locations"),
-
- #       selectInput("color", "Color", vars),
-        selectInput("size", "Size", vars, selected = "adultpop"),
-#        conditionalPanel("input.color == 'superzip' || input.size == 'superzip'",
-          # Only prompt for threshold when coloring or sizing by superzip0
-#          numericInput("threshold", "SuperZIP threshold (top n percentile)", 5)
-#        ),
-
-      )
+      leafletOutput("map", width="100%", height="100%")
     )
   ),
   tabPanel("Analysis",
@@ -45,6 +29,10 @@ navbarPage("Make America Healthy Again", id="nav",
              column(3,
                     selectInput("states", "States", c("All states"="", structure(state.abb, names=state.name), "Washington, DC"="DC"), multiple=TRUE)
              )
+           ),
+            fluidRow(
+               column(5, "5"),
+               column(5, "5")
            )
   ),
   tabPanel("Data explorer",

@@ -14,6 +14,7 @@ setwd(dir = dir)
 getwd()
 
 library(GA)
+library(geosphere)
 
 
 ##########################################################################
@@ -68,7 +69,7 @@ f_create_aggregate_accidents_to_total <- function(df_grid) {
 grid_CNT <- f_create_aggregate_accidents_to_total(forecasts_regions)
 
 ## Create basetable matrix
-f_create_basetable_matrix <- function(grid_CNT, region_info){
+f_create_basetable_matrix <- function(base, region_info){
   region_info <- region_info[,c("Region","City","State","nbr_inhabitants","inCity")]
   base <- merge(x = grid_CNT, y = region_info, by = "Region", all.x = TRUE)
   # Some dirty cleaning
@@ -77,10 +78,14 @@ f_create_basetable_matrix <- function(grid_CNT, region_info){
   base$nbr_inhabitants <- NULL
   # Add label indicating whether region is a suitable place to build a hospital
   base$eligible_hospital <- FALSE
-  base[is.na(base)] <- 0
+  base[(is.na(base$inCity)), ] <- 0
   base[base$inCity == 1,]$eligible_hospital <- TRUE
+  base$eligible_hospital = as.logical(base$eligible_hospital)
   # Select needed variables
-  base <- base[,c("x","y","eligible_hospital","inhabitants","total_accidents")]
+  base$region = base$Region
+  base$city = base$City
+  base$state = base$State
+  base <- base[,c("x","y","region","city","state", "eligible_hospital","inhabitants","total_accidents")]
   return(base)
 }
 
@@ -145,16 +150,16 @@ f_generate_matrix_transport_cost <- function(df_grid) {
   ## BUG: this uses the euclidian distance, and isn't actually accurate with the curverature of earth
   ## but then again, for a radius of 100 miles this likely doesn't matter.
   ## A better but very computationally expensive "improvement" would be to use haversin.
-  m_distances_between_all_regions <- as.matrix(dist(m_grid, diag = TRUE, upper = TRUE))
+  m_distances_between_all_regions <- distm(m_grid)
 
   ## Reduce it to a matrix to only contains the distances to hospitals
   cells_in_grid_capable_of_hospital = as.integer(rownames(df_grid[df_grid$eligible_hospital == TRUE,]))
   # This is a horrible constant that approximates the radian distance to kilometers
   # It's absoluletly horrible but hey, you're asking a european to plan usa hospitals.
   # What do I care?
-  cte_cost_per_kilometer = (cte_transport_cost_per_mile / 1.609344)
-  cte_radian_to_kilometers_coeff = 110
-  m_costs_transport <- (cte_cost_per_kilometer * cte_radian_to_kilometers_coeff) * m_distances_between_all_regions[c(cells_in_grid_capable_of_hospital),]
+  cte_cost_per_kilometer = (cte_transport_cost_per_mile / 1.61)
+  cte_meters_to_kilometers_coeff = 1 / 1000
+  m_costs_transport <- (cte_cost_per_kilometer * cte_meters_to_kilometers_coeff) * m_distances_between_all_regions[c(cells_in_grid_capable_of_hospital),]
 
   # Return the cost matrix per accident of size h x c, 
   # where h is the amount of cells that can house a hospital, and c is the total amount of cells in the grid.
@@ -326,50 +331,26 @@ f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_
 ##########################################################################
 ##                    Create an initial assignment                      ##
 ##########################################################################
-f_create_initial_assignment <- function(region_info){
-  region_info[is.na(region_info)] <- 0 # for now, until cedric's code is fixed
-  region_info <- region_info[region_info$inCity == 1, c("Region","City","State","inCity")]
-  region_info <- region_info[order(region_info$State,region_info$City),]
-  region_info$assignment <- 0
+f_create_initial_assignment <- function(df_grid){
+  df_grid <- df_grid[df_grid$eligible_hospital == 1, c("region","city","state","eligible_hospital")]
+  df_grid <- df_grid[order(df_grid$state,df_grid$city),]
+  df_grid$assignment <- 0
   # Build exactly one hospital in every big city (> 50k inhabitants)
-  for (i in 1:(nrow(region_info)-1)){
+  for (i in 1:(nrow(df_grid)-1)){
     if (i == 1){
-      region_info[i,]$assignment <- 1
+      df_grid[i,]$assignment <- 1
     }
-    else if (( region_info[i-1,c("City")] != region_info[i,c("City")] )){ 
-      region_info[i,]$assignment <- 1
+    else if (( df_grid[i-1,c("city")] != df_grid[i,c("city")] )){ 
+      df_grid[i,]$assignment <- 1
     } 
     else {
-      region_info[i,]$assignment <- 0
+      df_grid[i,]$assignment <- 0
     }
   }
-  v_initial_assignment <- region_info$assignment
+  v_initial_assignment <- df_grid$assignment
   return(v_initial_assignment)
 }
 
-#v_initial_assignment <- f_create_initial_assignment(region_information)
-#sum(v_initial_assignment)
-
-# Helper function: manually trims a solution of the GA
-f_create_initial_assignment_v2 <- function(df_optimal_grid) {
-  # Add previous solution to the suggestions
-  v_begin_solution <- df_optimal_grid[df_optimal_grid$eligible_hospital,]$build_hospital
-  
-  # Trim all hospitals lower with a cost < 1000 000 (removes 203 hospitals)
-  df_optimal_grid[df_optimal_grid$transport_cost < 1000000,]$build_hospital = 0
-  v_begin_solution_two <- df_optimal_grid[df_optimal_grid$eligible_hospital,]$build_hospital
-  
-  # < 1 500 000
-  df_optimal_grid[df_optimal_grid$transport_cost < 1500000,]$build_hospital = 0
-  v_begin_solution_three <- df_optimal_grid[df_optimal_grid$eligible_hospital,]$build_hospital
-  
-  # < 2 000 000
-  df_optimal_grid[df_optimal_grid$transport_cost < 2000000,]$build_hospital = 0
-  v_begin_solution_four <- df_optimal_grid[df_optimal_grid$eligible_hospital,]$build_hospital
-  
-  m_begin_solution <- matrix(c(v_begin_solution, v_begin_solution_two, v_begin_solution_three, v_begin_solution_four, v_suggestion_solution_trimmed, v_suggestion_solution_trimmed_2), ncol=1488, byrow=TRUE)
-  return(m_begin_solution)
-}
 
 ##########################################################################
 ##                          Genetic Algorithm                           ##
@@ -404,7 +385,8 @@ f_ga_optimize <- function(df_grid, m_begin_solution, investment_cost_per_hospita
   
   count_of_eligible_hospitals = sum(df_grid$eligible_hospital)
   print("[*] Running Genetic Algorithm on the grid")
-  GA <- ga("binary", fitness = f_fitness, maxiter = 50, suggestions = m_begin_solution, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
+  # 
+  GA <- ga("binary", fitness = f_fitness, suggestions = m_begin_solution, maxiter = 250, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
   
   # Inspect solution
   plot(GA)
@@ -421,21 +403,17 @@ f_check_solution <- function(v_hospital_assignment) {
   return(cost_result)
 }
 
-# Helper function that creates the final dataframe
-f_build_final_basetable <- function(df_grid, v_hospital_assignment_solution) {
-  df_grid$build_hospital = FALSE
-  df_grid[df_grid$eligible_hospital==1,]$build_hospital = as.logical(v_hospital_assignment_solution)
-  
-
-  
-  return(df_grid)
-}
-
 #f_check_solution(rep(1, 1488), grid_CNT, 50000000, 5000 * 20, 10)
 #f_setup(grid_CNT, 50000000, 5000 * 20, 10, 0.98)
-# TODO: jef matrix maken
-m_begin_solution <- f_create_initial_assignment_v2(optimal_grid_CNT)
+# Load previous best solution
+load("best_solution.rds")
+# Turn into a begin solution matrix
+m_begin_solution <- matrix(c(v_best_hospital_assignment), ncol=length(v_best_hospital_assignment), byrow=TRUE)
+# Run optimization
 GA <- f_ga_optimize(grid_CNT, m_begin_solution, 50000000, 5000 * 20, 10, 0.98)
+# Save the best solution
+v_best_hospital_assignment <- summary(GA)$solution
+save(v_best_hospital_assignment, file = "best_solution.rds")
 
 
 ##########################################################################
@@ -472,7 +450,8 @@ f_build_optimal_grid <- function(v_optimal_hospital_assignment, df_grid) {
     
   return(df_grid)
 }
-optimal_grid_CNT <- f_build_optimal_grid(c(summary(GA)$solution), grid_CNT)
+#optimal_grid_CNT <- f_build_optimal_grid(c(summary(GA)$solution), grid_CNT)
+optimal_grid_CNT <- f_build_optimal_grid(c(v_solution_123_hospitals), grid_CNT)
 
 # A function to check the coverage of a single solution
 f_check_coverage_of_solution <- function(v_hospital_assignment) {
@@ -480,12 +459,12 @@ f_check_coverage_of_solution <- function(v_hospital_assignment) {
   m_assignment <- f_optimal_assignment(v_hospital_assignment, m_transport_cost_to_hospital_per_accident)
   
   # Calculate coverage percentage
-  coverage <- f_get_coverage(m_assignment)
+  coverage <- f_get_missing_coverage(m_assignment)
   print(coverage)
   coverage_percentage <- coverage / cte_sum_total_accidents
   return(1 - coverage_percentage)
 }
 #f_check_coverage_of_solution(c(summary(GA_with_begin)$solution))
 
-#grid_CNT <- f_add_optimal_solution_to_grid(,df_grid)
+
 
