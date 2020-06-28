@@ -266,6 +266,13 @@ f_accidents_basetable_region_month <- function(res, futac){
   return(list(grid_CNT,grid_full_count))
 }
 
+# Function to prepare the data for exploration
+f_prepare_data_shiny <- function(data){
+  result <- aggregate(X~City, data, length)
+  result$long <- aggregate(Start_Lng~City, data, mean)[,2]
+  result$lat <- aggregate(Start_Lat~City, data, mean)[,2]
+  return(result)
+}
 
 ##### CLEAN FUTURE ACCIDENTS DATASET
 ##########################################################################################################
@@ -314,3 +321,15 @@ full_grid_CNT_monthly <- output[[2]]
 write.csv(grid_CNT_monthly, file = "grid_CNT_monthly.csv", row.names = TRUE)
 write.csv(full_grid_CNT_monthly, file = "full_grid_CNT_monthly.csv", row.names = TRUE)
 
+### PREPARE CITY DATA
+######################################################################################################
+
+# Execute predefined function
+basetable_agg <- f_prepare_data_shiny(data = accidents)
+
+# Inspect basetable
+summary(basetable_agg)
+str(basetable_agg)
+
+# Save basetable
+write.csv(basetable_agg, file = "basetable_agg.csv")
