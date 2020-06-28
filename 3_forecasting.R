@@ -121,8 +121,8 @@ f_forecast_city_inhabitants <- function(cities){
       names(trans_series) <- 'Freq'
       ts <- ts(data = trans_series, start = c(2010), end = c(2019), frequency = 1)
       
-      # Forecast (with exponential smoothing)
-      ets_model <- ets(ts, model = "ZZZ")
+      # Forecast (with simple exponential smoothing)
+      ets_model <- ets(ts, model = "ANN")
       fc_ets <- forecast(ets_model, h = h)
       
       forecasted_df <- rbind(forecasted_df, data.frame(fc_ets)[,1])
