@@ -25,43 +25,26 @@ navbarPage("Make America Healthy Again", id="nav",
     )
   ),
   tabPanel("Analysis",
-           fluidRow(
-             column(3,
-                    selectInput("states", "States", c("All states"="", structure(state.abb, names=state.name), "Washington, DC"="DC"), multiple=TRUE)
-             )
-           ),
             fluidRow(
-               column(5, "5"),
-               column(5, "5")
+              column(4,
+                     numericInput("investmentCost", "Investment cost (million $)", min=0, value=50)
+              ),
+              column(4,
+                     numericInput("operationalCost", "Operational cost per inhabitant ($)", min=0, value=5000)
+              ),
+              column(4,
+                     numericInput("transportCost", "Transport cost per mile ($)", min=0, value=10)
+              ),
+              column(4,
+                     numericInput("maximumMiles", "Maximum distance to accidents (miles)", min=0, value=100)
+              ),
+              column(4,
+                     numericInput("accidentsPercentage", "Change amount of accidents (%)", value=0)
+              ),
+              column(4,
+                     actionButton("buttonSensitivity", "Calculate changes")
+              )
            )
   ),
-  tabPanel("Data explorer",
-    fluidRow(
-      column(3,
-        selectInput("states", "States", c("All states"="", structure(state.abb, names=state.name), "Washington, DC"="DC"), multiple=TRUE)
-      ),
-      column(3,
-        conditionalPanel("input.states",
-          selectInput("cities", "Cities", c("All cities"=""), multiple=TRUE)
-        )
-      ),
-      column(3,
-        conditionalPanel("input.states",
-          selectInput("zipcodes", "Zipcodes", c("All zipcodes"=""), multiple=TRUE)
-        )
-      )
-    ),
-    fluidRow(
-      column(1,
-        numericInput("minScore", "Min score", min=0, max=100, value=0)
-      ),
-      column(1,
-        numericInput("maxScore", "Max score", min=0, max=100, value=100)
-      )
-    ),
-    hr(),
-    DT::dataTableOutput("ziptable")
-  ),
-
   conditionalPanel("false", icon("crosshair"))
 )

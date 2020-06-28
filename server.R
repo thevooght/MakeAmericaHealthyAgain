@@ -3,6 +3,12 @@ library(RColorBrewer)
 library(scales)
 library(lattice)
 library(dplyr)
+require(tcltk)
+
+source("5_ga_optimizer.R")
+
+msgBox <- tkmessageBox(title = "Setup", message = "Setup calculating transport matrix may take a few minutes!", icon = "info", type = "ok")
+#f_setup(optimal_grid_CNT, 50000000, 5000 * 20, 10, 0.98)
 
 # Leaflet bindings are a bit slow; for now we'll just sample to compensate
 set.seed(100)
@@ -92,6 +98,15 @@ function(input, output, session) {
     isolate({
       showHospitalPopup(event$id, event$lat, event$lng)
     })
+  })
+  
+  ##########
+  observeEvent(input$buttonSensitivity, {
+    bool_recalc_transport_matrix = !identical(cte_transport_cost_per_mile, input$transportCost)
+    cte_investment_cost_per_hospital <<- input$investmentCost * 1000000 # turn to millions
+    cte_operational_cost_per_hospital <<- input$operationalCost * 20 # years
+    cte_transport_cost_per_mile <<- input$transportCost
+    
   })
 
 }

@@ -7,12 +7,6 @@
 # Regis Demolie, Cedric Devooght, Nathan De Wilde, Florian Mathieu, Jef Van Hulle                        #
 ##########################################################################################################
 
-rm(list = ls())
-dir <- getwd()
-dir <- paste0(dir, "/data")
-setwd(dir = dir)
-getwd()
-
 library(GA)
 library(geosphere)
 
@@ -21,17 +15,20 @@ library(geosphere)
 ##                                LOAD DATA                             ##
 ##########################################################################
 
-# Forecasts per region
-forecasts_regions <- read.csv(file = "forecasted_accidents_allRegions_monthly.csv",
-                              header = TRUE,
-                              sep = ',')
-str(forecasts_regions)
-
-# City information per region
-region_information <- read.csv(file = "forecasted_accidents_wCity.csv",
-                              header = TRUE,
-                              sep = ',')
-str(region_information)
+f_load_initial_data <- function() {
+  # Forecasts per region
+  forecasts_regions <<- read.csv(file = "data/forecasted_accidents_allRegions_monthly.csv",
+                                header = TRUE,
+                                sep = ',')
+  str(forecasts_regions)
+  
+  # City information per region
+  region_information <<- read.csv(file = "data/forecasted_accidents_wCity.csv",
+                                 header = TRUE,
+                                 sep = ',')
+  str(region_information)
+}
+#f_load_initial_data()
 
 
 # BASE TABLE
@@ -66,7 +63,6 @@ f_create_aggregate_accidents_to_total <- function(df_grid) {
   return(df_grid)
 }
 
-grid_CNT <- f_create_aggregate_accidents_to_total(forecasts_regions)
 
 ## Create basetable matrix
 f_create_basetable_matrix <- function(base, region_info){
@@ -88,16 +84,6 @@ f_create_basetable_matrix <- function(base, region_info){
   base <- base[,c("x","y","region","city","state", "eligible_hospital","inhabitants","total_accidents")]
   return(base)
 }
-
-grid_CNT <- f_create_basetable_matrix(grid_CNT, region_information)
-
-# For testing purposes
-#grid_CNT <- grid_CNT[1:5000,]
-
-# Inspect basetable matrix
-str(grid_CNT)
-summary(grid_CNT)
-# There are ...  eligible places to build a hospital
 
 
 ##########################################################################
@@ -357,7 +343,7 @@ f_create_initial_assignment <- function(df_grid){
 ##########################################################################
 
 f_ga_optimize <- function(df_grid, m_begin_solution, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage) {
-  f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage)
+  #f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage)
   
   # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
   # Note: to reduce the search space, the length of this vector is only cells with eligible_hospital == TRUE.
@@ -402,18 +388,8 @@ f_check_solution <- function(v_hospital_assignment) {
   cost_result <- f_calculate_total_cost(v_hospital_assignment)
   return(cost_result)
 }
-
 #f_check_solution(rep(1, 1488), grid_CNT, 50000000, 5000 * 20, 10)
-#f_setup(grid_CNT, 50000000, 5000 * 20, 10, 0.98)
-# Load previous best solution
-load("best_solution.rds")
-# Turn into a begin solution matrix
-m_begin_solution <- matrix(c(v_best_hospital_assignment), ncol=length(v_best_hospital_assignment), byrow=TRUE)
-# Run optimization
-GA <- f_ga_optimize(grid_CNT, m_begin_solution, 50000000, 5000 * 20, 10, 0.98)
-# Save the best solution
-v_best_hospital_assignment <- summary(GA)$solution
-save(v_best_hospital_assignment, file = "best_solution.rds")
+
 
 
 ##########################################################################
@@ -451,7 +427,6 @@ f_build_optimal_grid <- function(v_optimal_hospital_assignment, df_grid) {
   return(df_grid)
 }
 #optimal_grid_CNT <- f_build_optimal_grid(c(summary(GA)$solution), grid_CNT)
-optimal_grid_CNT <- f_build_optimal_grid(c(v_solution_123_hospitals), grid_CNT)
 
 # A function to check the coverage of a single solution
 f_check_coverage_of_solution <- function(v_hospital_assignment) {
@@ -467,4 +442,24 @@ f_check_coverage_of_solution <- function(v_hospital_assignment) {
 #f_check_coverage_of_solution(c(summary(GA_with_begin)$solution))
 
 
+f_run <- function() {
+  f_load_initial_data()
+  grid_CNT <<- f_create_aggregate_accidents_to_total(forecasts_regions)
+  grid_CNT <<- f_create_basetable_matrix(grid_CNT, region_information)
+  
+  # Setup the global context
+  f_setup(grid_CNT, 50000000, 5000 * 20, 10, 0.98)
+  
+  # Load previous best solution
+  load("best_solution.rds")
+  # Turn into a begin solution matrix
+  m_begin_solution <<- matrix(c(v_best_hospital_assignment), ncol=length(v_best_hospital_assignment), byrow=TRUE)
+  # Run optimization
+  GA <<- f_ga_optimize(grid_CNT, m_begin_solution, 50000000, 5000 * 20, 10, 0.98)
+  # Save the best solution
+  v_best_hospital_assignment <<- summary(GA)$solution
+  save(v_best_hospital_assignment, file = "best_solution.rds")
+  
+  optimal_grid_CNT <<- f_build_optimal_grid(c(v_best_hospital_assignment), grid_CNT)
+}
 
