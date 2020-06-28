@@ -463,10 +463,10 @@ f_run_sensitivity <- function(constraint_perc) {
 }
 
 # We need to increase our PC focus on R for this
-memory.limit(size = 1000000)
+#memory.limit(size = 1000000)
 
 ## LET IT RUN BOYS
 # Regis: 1.0
 # Jef: 0.95
 # Cedric: 0.90
-f_run_sensitivity(constraint_perc = 0.95)
+#f_run_sensitivity(constraint_perc = 0.95)
