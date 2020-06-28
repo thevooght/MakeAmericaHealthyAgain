@@ -140,9 +140,6 @@ f_generate_matrix_transport_cost <- function(df_grid) {
 
   ## Reduce it to a matrix to only contains the distances to hospitals
   cells_in_grid_capable_of_hospital = as.integer(rownames(df_grid[df_grid$eligible_hospital == TRUE,]))
-  # This is a horrible constant that approximates the radian distance to kilometers
-  # It's absoluletly horrible but hey, you're asking a european to plan usa hospitals.
-  # What do I care?
   cte_cost_per_kilometer = (cte_transport_cost_per_mile / 1.61)
   cte_meters_to_kilometers_coeff = 1 / 1000
   m_costs_transport <- (cte_cost_per_kilometer * cte_meters_to_kilometers_coeff) * m_distances_between_all_regions[c(cells_in_grid_capable_of_hospital),]
@@ -313,37 +310,12 @@ f_setup <- function(df_grid, investment_cost_per_hospital, operational_cost_per_
   cte_cutoff_transport_cost <<- transport_cost_per_mile * 100
 }
 
-
-##########################################################################
-##                    Create an initial assignment                      ##
-##########################################################################
-f_create_initial_assignment <- function(df_grid){
-  df_grid <- df_grid[df_grid$eligible_hospital == 1, c("region","city","state","eligible_hospital")]
-  df_grid <- df_grid[order(df_grid$state,df_grid$city),]
-  df_grid$assignment <- 0
-  # Build exactly one hospital in every big city (> 50k inhabitants)
-  for (i in 1:(nrow(df_grid)-1)){
-    if (i == 1){
-      df_grid[i,]$assignment <- 1
-    }
-    else if (( df_grid[i-1,c("city")] != df_grid[i,c("city")] )){ 
-      df_grid[i,]$assignment <- 1
-    } 
-    else {
-      df_grid[i,]$assignment <- 0
-    }
-  }
-  v_initial_assignment <- df_grid$assignment
-  return(v_initial_assignment)
-}
-
-
 ##########################################################################
 ##                          Genetic Algorithm                           ##
 ##########################################################################
 
 f_ga_optimize <- function(df_grid, m_begin_solution, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage) {
-  #f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage)
+  f_setup(df_grid, investment_cost_per_hospital, operational_cost_per_hospital, transport_cost_per_mile, min_accident_coverage)
   
   # v_hospital_assignment: a logical vector (0 or 1's), indicating whether a hospital should be built on a cell.
   # Note: to reduce the search space, the length of this vector is only cells with eligible_hospital == TRUE.
@@ -372,7 +344,7 @@ f_ga_optimize <- function(df_grid, m_begin_solution, investment_cost_per_hospita
   count_of_eligible_hospitals = sum(df_grid$eligible_hospital)
   print("[*] Running Genetic Algorithm on the grid")
   # 
-  GA <- ga("binary", fitness = f_fitness, suggestions = m_begin_solution, maxiter = 250, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
+  GA <- ga("binary", fitness = f_fitness, suggestions = m_begin_solution, maxiter = 20, run = 200, seed = 123, nBits = count_of_eligible_hospitals)
   
   # Inspect solution
   plot(GA)
@@ -463,3 +435,38 @@ f_run <- function() {
   optimal_grid_CNT <<- f_build_optimal_grid(c(v_best_hospital_assignment), grid_CNT)
 }
 
+##########################################################################
+##                        Sensitivity Analysis                          ##
+##########################################################################
+
+# Adapt function
+f_run_sensitivity <- function(constraint_perc) {
+  f_load_initial_data()
+  grid_CNT <<- f_create_aggregate_accidents_to_total(forecasts_regions)
+  grid_CNT <<- f_create_basetable_matrix(grid_CNT, region_information)
+  
+  # Setup the global context
+  f_setup(grid_CNT, 50000000, 5000 * 20, 10, constraint_perc)
+  
+  # Load previous best solution
+  load("code/data/best_solution.rds")
+  # Turn into a begin solution matrix
+  m_begin_solution <<- matrix(c(v_best_hospital_assignment), ncol=length(v_best_hospital_assignment), byrow=TRUE)
+  # Run optimization
+  GA <<- f_ga_optimize(grid_CNT, m_begin_solution, 50000000, 5000 * 20, 10, constraint_perc)
+  # Save the best solution
+  v_best_hospital_assignment <<- summary(GA)$solution
+  save(v_best_hospital_assignment, file = paste0("best_solution_", constraint_perc, ".rds"))
+  
+  optimal_grid_CNT <<- f_build_optimal_grid(c(v_best_hospital_assignment), grid_CNT)
+  save(optimal_grid_CNT, file = paste0("optimal_grid_CNT_", constraint_perc, ".rds"))
+}
+
+# We need to increase our PC focus on R for this
+memory.limit(size = 1000000)
+
+## LET IT RUN BOYS
+# Regis: 1.0
+# Jef: 0.95
+# Cedric: 0.90
+f_run_sensitivity(constraint_perc = 0.95)
