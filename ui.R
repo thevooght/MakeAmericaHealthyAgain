@@ -64,6 +64,26 @@ navbarPage("Make America Healthy Again", id="nav",
               column(4,
                      actionButton("buttonSensitivity", "Calculate changes")
               )
+           ),
+           fluidRow(
+             column(4,
+                    plotOutput("barchart_total_cost")
+             ),
+             column(4,
+                      plotOutput("barchart_investment_cost")
+             ),
+             column(4,
+                    plotOutput("barchart_operational_cost")
+             ),
+             column(4,
+                    plotOutput("barchart_transport_cost")
+             ),
+             column(4,
+                    plotOutput("piechart_cost")
+             ),
+             column(4,
+                    plotOutput("piechart_coverage")
+             )
            )
   ),
   conditionalPanel("false", icon("crosshair"))

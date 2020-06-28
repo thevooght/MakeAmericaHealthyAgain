@@ -9,7 +9,10 @@ require(tcltk)
 source("5_ga_optimizer.R")
 
 msgBox <- tkmessageBox(title = "Setup", message = "Setup calculating transport matrix may take a few minutes!", icon = "info", type = "ok")
-#f_setup(optimal_grid_CNT, 50000000, 5000 * 20, 10, 0.98)
+f_setup(optimal_grid_CNT, 50000000, 5000 * 20, 10, 0.98)
+
+# Display numbers as a whole
+#options("scipen"=100, "digits"=4)
 
 # Leaflet bindings are a bit slow; for now we'll just sample to compensate
 set.seed(100)
@@ -92,12 +95,94 @@ f_setup_hospital_map <- function(input, output, session) {
   
 }
 
+f_plot_all_analysis_charts <- function(output) {
+  
+  output$barchart_total_cost <- renderPlot({
+    df_merged <- as.data.frame(rbind(c("Before", sum(optimal_grid_CNT$total_cost)), c("After", sum(adjusted_grid_CNT$total_cost))))
+    colnames(df_merged) <- c("Result", "Cost")
+    
+    r <- ggplot(data=df_merged, aes(x=Result, y=Cost)) +
+      geom_bar(stat="identity") +
+      ggtitle("Total Cost")
+    return(r)
+    
+  })
+  
+  output$barchart_investment_cost <- renderPlot({
+    df_merged <- as.data.frame(rbind(c("After", sum(adjusted_grid_CNT$investment_cost)), c("Before", sum(optimal_grid_CNT$investment_cost))))
+    colnames(df_merged) <- c("Result", "Cost")
+    
+    r <- ggplot(data=df_merged, aes(x=Result, y=Cost)) +
+      geom_bar(stat="identity") +
+      ggtitle("Investment Cost")
+    return(r)
+    
+  })
+  
+  output$barchart_operational_cost <- renderPlot({
+    df_merged <- as.data.frame(rbind(c("Before", sum(optimal_grid_CNT$operational_cost)), c("After", sum(adjusted_grid_CNT$operational_cost))))
+    colnames(df_merged) <- c("Result", "Cost")
+    
+    r <- ggplot(data=df_merged, aes(x=Result, y=Cost)) +
+      geom_bar(stat="identity") +
+      ggtitle("Operational Cost")
+    return(r)
+    
+  })
+  
+  output$barchart_transport_cost <- renderPlot({
+    df_merged <- as.data.frame(rbind(c("Before", sum(optimal_grid_CNT$transport_cost)), c("After", sum(adjusted_grid_CNT$transport_cost))))
+    colnames(df_merged) <- c("Result", "Cost")
+    
+    r <- ggplot(data=df_merged, aes(x=Result, y=Cost)) +
+      geom_bar(stat="identity") +
+      ggtitle("Transport Cost")
+    return(r)
+    
+  })
+  
+  output$piechart_cost <- renderPlot({
+    total <- sum(adjusted_grid_CNT$total_cost)
+    invest <- (sum(adjusted_grid_CNT$investment_cost) / total) * 100
+    operational <- (sum(adjusted_grid_CNT$operational_cost) / total) * 100
+    transport <- (sum(adjusted_grid_CNT$transport_cost) / total) * 100
+    df_merged <- as.data.frame(rbind(c("Investment", invest),c("Operational", operational), c("Transport", transport)))
+    colnames(df_merged) <- c("Type", "Cost")
+    
+    print(df_merged)
+    
+    
+    r <- ggplot(df_merged, aes(x="", y=Cost, fill=Type)) +
+      geom_bar(width = 1, stat = "identity") +
+      coord_polar("y", start=0) +
+      ggtitle("Pie chart Cost")
+    return(r)
+    
+  })
+  
+  output$piechart_coverage<- renderPlot({
+    coverage <- f_check_coverage_of_solution(adjusted_grid_CNT[adjusted_grid_CNT$eligible_hospital,]$build_hospital)
+    df_merged <- as.data.frame(rbind(c("Covered", coverage), c("Missed", 1 - coverage)))
+    colnames(df_merged) <- c("Type", "Coverage")
+    
+    print(df_merged)
+    
+    
+    r <- ggplot(df_merged, aes(x="", y=Coverage, fill=Type)) +
+      geom_bar(width = 1, stat = "identity") +
+      coord_polar("y", start=0) +
+      ggtitle("Covered vs missing")
+    return(r)
+    
+  })
+}
 
 
 
 
 function(input, output, session) {
   hospital_map_made <<- FALSE
+  f_plot_all_analysis_charts(output)
   ## Interactive Map ###########################################
 
   #################### ACCIDENTS ########################
@@ -127,7 +212,9 @@ function(input, output, session) {
             main = "Top 15 cities with most accidents",
             las = 2)
   })
-  
+
+
+             
   #################### HOSPITALS ########################
   print(input)
   observe({
@@ -141,10 +228,30 @@ function(input, output, session) {
 
   ##########
   observeEvent(input$buttonSensitivity, {
-    bool_recalc_transport_matrix = !identical(cte_transport_cost_per_mile, input$transportCost)
+    adjusted_grid_CNT <<- optimal_grid_CNT
+    bool_recalc_transport_matrix = (cte_transport_cost_per_mile != input$transportCost)
+
+    
     cte_investment_cost_per_hospital <<- input$investmentCost * 1000000 # turn to millions
     cte_operational_cost_per_hospital <<- input$operationalCost * 20 # years
     cte_transport_cost_per_mile <<- input$transportCost
+    
+    cte_cutoff_transport_cost <<- cte_transport_cost_per_mile * input$maximumMiles
+    adjusted_grid_CNT$total_accidents <<- (1 + input$accidentsPercentage / 100 ) * optimal_grid_CNT$total_accidents
+    new_total_accidents <<- sum(adjusted_grid_CNT$total_accidents)
+    bool_recalc_transport_matrix = bool_recalc_transport_matrix || (cte_sum_total_accidents != new_total_accidents)
+    cte_sum_total_accidents <<- new_total_accidents
+    
+    v_hospital_assignment <- adjusted_grid_CNT[adjusted_grid_CNT$eligible_hospital,]$build_hospital
+    adjusted_grid_CNT <<- f_build_optimal_grid(v_hospital_assignment, adjusted_grid_CNT)
+    
+    if (bool_recalc_transport_matrix) {
+      msgBox <- tkmessageBox(title = "Recalculating", message = "Recalculating transport matrix may take a few minutes!", icon = "info", type = "ok")
+      f_setup(adjusted_grid_CNT, cte_investment_cost_per_hospital, cte_operational_cost_per_hospital, cte_transport_cost_per_mile, 0.98)
+      msgBox <- tkmessageBox(title = "Recalculating", message = "Recalculating done!", icon = "info", type = "ok")
+    }
+    
+    f_plot_all_analysis_charts(output)
     
   })
 
