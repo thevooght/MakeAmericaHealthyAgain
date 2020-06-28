@@ -296,7 +296,7 @@ str(cities)
 summary(cities)
 
 # Execute predefined function
-cities_cleaned <- f_prepare_cities_data(data = cities)
+cities_cleaned <- f_prepare_cities_data(cities = cities)
 
 # Plot general evolution of number of inhabitants
 evolution <- colSums(as.data.frame(cities_cleaned[,-c(1:2)]))
